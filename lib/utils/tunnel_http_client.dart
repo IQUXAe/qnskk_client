@@ -168,8 +168,11 @@ class TunnelHttpClient extends http.BaseClient {
   static const String headerMediaIndex = 'x-qnskk-media-index';
   static const String headerMediaPayload = 'x-qnskk-media-payload';
 
-  static const int _mediaChunkSize = minChunkSize;
-  static const int _maxMediaParallelChunks = 4;
+  static const int _mediaChunkSize = 16 * 1024;
+  static const int _mediaEncryptBatchChunks = 64;
+  static const int _maxMediaParallelChunks = 8;
+  static const int _mediaChunkMaxAttempts = 4;
+  static const Duration _mediaChunkRetryBaseDelay = Duration(milliseconds: 250);
 
   static final Random _random = Random.secure();
 
@@ -309,9 +312,9 @@ class TunnelHttpClient extends http.BaseClient {
       for (
         var start = 0;
         start < chunkTotal;
-        start += _maxMediaParallelChunks
+        start += _mediaEncryptBatchChunks
       ) {
-        final end = min(start + _maxMediaParallelChunks, chunkTotal);
+        final end = min(start + _mediaEncryptBatchChunks, chunkTotal);
         final batch = <_MediaChunkPayload>[];
         for (var index = start; index < end; index++) {
           final chunkStart = index * chunkSize;
@@ -336,26 +339,36 @@ class TunnelHttpClient extends http.BaseClient {
           ),
         );
 
-        final futures = <Future<http.StreamedResponse>>[];
-        for (final chunk in encryptedChunks) {
-          futures.add(
-            _sendEncryptedMediaChunk(
-              request.url,
-              session,
-              chunk.index,
-              chunk.nonce,
-              chunk.ciphertext,
-            ),
+        for (
+          var sendStart = 0;
+          sendStart < encryptedChunks.length;
+          sendStart += _maxMediaParallelChunks
+        ) {
+          final sendEnd = min(
+            sendStart + _maxMediaParallelChunks,
+            encryptedChunks.length,
           );
-        }
-        final responses = await Future.wait(futures);
-        for (final response in responses) {
-          await response.stream.drain();
-          if (response.statusCode != 202) {
-            throw http.ClientException(
-              'Media tunnel chunk failed',
-              request.url,
+          final futures = <Future<http.StreamedResponse>>[];
+          for (final chunk in encryptedChunks.sublist(sendStart, sendEnd)) {
+            futures.add(
+              _sendEncryptedMediaChunk(
+                request.url,
+                session,
+                chunk.index,
+                chunk.nonce,
+                chunk.ciphertext,
+              ),
             );
+          }
+          final responses = await Future.wait(futures);
+          for (final response in responses) {
+            await response.stream.drain();
+            if (response.statusCode != 202) {
+              throw http.ClientException(
+                'Media tunnel chunk failed',
+                request.url,
+              );
+            }
           }
         }
       }
@@ -388,17 +401,54 @@ class TunnelHttpClient extends http.BaseClient {
     int index,
     Uint8List nonce,
     Uint8List ciphertext,
-  ) {
-    return _inner.send(
-      _buildMediaRequest(
-        url: url,
-        op: 'chunk',
-        session: session,
-        index: index,
-        nonce: nonce,
-        payload: ciphertext,
-      ),
+  ) async {
+    Object? lastError;
+    StackTrace? lastStackTrace;
+
+    for (var attempt = 1; attempt <= _mediaChunkMaxAttempts; attempt++) {
+      try {
+        final response = await _inner.send(
+          _buildMediaRequest(
+            url: url,
+            op: 'chunk',
+            session: session,
+            index: index,
+            nonce: nonce,
+            payload: ciphertext,
+          ),
+        );
+        if (response.statusCode == 202) {
+          return response;
+        }
+
+        await response.stream.drain();
+        lastError = http.ClientException(
+          'Media tunnel chunk $index failed with HTTP ${response.statusCode}',
+          url,
+        );
+      } catch (e, s) {
+        lastError = e;
+        lastStackTrace = s;
+      }
+
+      if (attempt < _mediaChunkMaxAttempts) {
+        await Future<void>.delayed(_mediaRetryDelay(attempt));
+      }
+    }
+
+    if (lastError is http.ClientException) {
+      throw lastError;
+    }
+    Error.throwWithStackTrace(
+      http.ClientException('Media tunnel chunk $index failed: $lastError', url),
+      lastStackTrace ?? StackTrace.current,
     );
+  }
+
+  Duration _mediaRetryDelay(int attempt) {
+    final jitterMs = _random.nextInt(120);
+    return _mediaChunkRetryBaseDelay * (1 << (attempt - 1)) +
+        Duration(milliseconds: jitterMs);
   }
 
   Future<void> _validateMediaInitResponse(

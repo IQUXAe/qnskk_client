@@ -9,6 +9,8 @@ import 'package:http/http.dart' as http;
 
 class _RecordingClient extends http.BaseClient {
   final List<http.Request> requests = [];
+  final Map<int, int> failingMediaChunkAttempts = {};
+  final Map<int, int> _mediaChunkAttempts = {};
   http.StreamedResponse? nextResponse;
   Object? errorToThrow;
 
@@ -19,6 +21,15 @@ class _RecordingClient extends http.BaseClient {
     }
     if (errorToThrow != null) throw errorToThrow!;
     if (request.headers['x-qnskk-media-op'] == 'chunk') {
+      final index = int.parse(request.headers['x-qnskk-media-index']!);
+      final attempt = (_mediaChunkAttempts[index] ?? 0) + 1;
+      _mediaChunkAttempts[index] = attempt;
+      if (attempt <= (failingMediaChunkAttempts[index] ?? 0)) {
+        return http.StreamedResponse(
+          Stream<List<int>>.fromIterable([utf8.encode('fail')]),
+          500,
+        );
+      }
       return http.StreamedResponse(Stream<List<int>>.empty(), 202);
     }
     if (request.headers['x-qnskk-chunk-total'] != null) {
@@ -271,7 +282,7 @@ void main() {
       final chunks = inner.requests
           .where((r) => r.headers['x-qnskk-media-op'] == 'chunk')
           .toList();
-      expect(chunks, hasLength(4));
+      expect(chunks, hasLength(3));
       for (var i = 0; i < chunks.length; i++) {
         expect(chunks[i].method, 'OPTIONS');
         expect(chunks[i].headers['x-qnskk-media-index'], '$i');
@@ -281,6 +292,28 @@ void main() {
           lessThanOrEqualTo(31 * 1024),
         );
       }
+    });
+
+    test('Matrix media upload retries failed chunks', () async {
+      inner.failingMediaChunkAttempts[1] = 1;
+      final req = http.Request(
+        'POST',
+        Uri.parse(
+          'https://example.com/_matrix/media/v3/upload?filename=file.bin',
+        ),
+      );
+      req.headers['authorization'] = 'Bearer media';
+      req.headers['content-type'] = 'application/octet-stream';
+      req.bodyBytes = Uint8List.fromList(List.generate(45 * 1024, (i) => i));
+
+      await client.send(req);
+
+      final chunkIndexes = inner.requests
+          .where((r) => r.headers['x-qnskk-media-op'] == 'chunk')
+          .map((r) => r.headers['x-qnskk-media-index'])
+          .toList();
+      expect(chunkIndexes.where((index) => index == '1'), hasLength(2));
+      expect(inner.requests.last.headers['x-qnskk-media-op'], 'commit');
     });
 
     test('Encryption key length is asserted', () {

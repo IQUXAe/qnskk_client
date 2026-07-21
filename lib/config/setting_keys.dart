@@ -71,7 +71,7 @@ enum AppSettings<T> {
     'https://fluffychat.im/privacy',
   ),
   tos<String>('chat.fluffy.tos_url', 'https://fluffychat.im/tos'),
-  sendTimelineEventTimeout<int>('chat.fluffy.send_timeline_event_timeout', 15),
+  sendTimelineEventTimeout<int>('chat.fluffy.send_timeline_event_timeout', 180),
   webNotificationSound<bool>('chat.fluffy.web_notification_sound', true),
   chatFilter<String>('chat.fluffy.chat_filter', 'allChats'),
   hideRoomsInSpaces<bool>('chat.fluffy.hideRoomsInSpaces', false),
@@ -167,6 +167,13 @@ enum AppSettings<T> {
     final presetHomeserver = store.getString(AppSettings.presetHomeserver.key);
     if (presetHomeserver != qnskkHomeserver) {
       await store.setString(AppSettings.presetHomeserver.key, qnskkHomeserver);
+    }
+
+    final sendTimelineEventTimeout = store.getInt(
+      AppSettings.sendTimelineEventTimeout.key,
+    );
+    if (sendTimelineEventTimeout == null || sendTimelineEventTimeout < 180) {
+      await store.setInt(AppSettings.sendTimelineEventTimeout.key, 180);
     }
   }
 }
