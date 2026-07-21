@@ -4,13 +4,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import 'package:fluffychat/config/app_config.dart';
-import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:flutter/material.dart';
 import 'package:particles_network/particles_network.dart';
-import 'package:url_launcher/url_launcher_string.dart';
 
 class LoginScaffold extends StatelessWidget {
   final Widget body;
@@ -120,18 +118,6 @@ class _PrivacyButtons extends StatelessWidget {
         child: Row(
           mainAxisAlignment: mainAxisAlignment,
           children: [
-            TextButton(
-              onPressed: () => launchUrlString(AppSettings.website.value),
-              child: Text(L10n.of(context).website, style: shadowTextStyle),
-            ),
-            TextButton(
-              onPressed: () => launchUrlString(AppConfig.supportUrl),
-              child: Text(L10n.of(context).help, style: shadowTextStyle),
-            ),
-            TextButton(
-              onPressed: () => launchUrlString(AppSettings.privacyPolicy.value),
-              child: Text(L10n.of(context).privacy, style: shadowTextStyle),
-            ),
             TextButton(
               onPressed: () => PlatformInfos.showDialog(context),
               child: Text(L10n.of(context).about, style: shadowTextStyle),

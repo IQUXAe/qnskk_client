@@ -7,6 +7,7 @@ import 'dart:async';
 
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/invitation_selection/invitation_selection_view.dart';
+import 'package:fluffychat/utils/qnskk_homeserver.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
@@ -90,12 +91,20 @@ class InvitationSelectionController extends State<InvitationSelection> {
     }
     currentSearchTerm = text;
     if (currentSearchTerm.isEmpty) return;
+    final userId = qnskkUserIdFromInput(currentSearchTerm);
+    if (userId == null && currentSearchTerm.contains(':')) {
+      setState(() => foundProfiles = []);
+      return;
+    }
     if (loading) return;
     setState(() => loading = true);
     final matrix = Matrix.of(context);
     SearchUserDirectoryResponse response;
     try {
-      response = await matrix.client.searchUserDirectory(text, limit: 10);
+      response = await matrix.client.searchUserDirectory(
+        qnskkUserSearchTerm(currentSearchTerm),
+        limit: 10,
+      );
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(
@@ -106,14 +115,16 @@ class InvitationSelectionController extends State<InvitationSelection> {
       setState(() => loading = false);
     }
     setState(() {
-      foundProfiles = List<Profile>.from(response.results);
-      if (text.isValidMatrixIdStrict() &&
-          foundProfiles.indexWhere((profile) => text == profile.userId) == -1) {
-        setState(
-          () => foundProfiles = [
-            Profile.fromJson({'user_id': text}),
-          ],
-        );
+      foundProfiles = response.results
+          .where((profile) => isQnskkUserId(profile.userId))
+          .toList();
+      if (userId != null &&
+          foundProfiles.indexWhere((profile) => userId == profile.userId) ==
+              -1) {
+        foundProfiles = [
+          Profile.fromJson({'user_id': userId}),
+          ...foundProfiles,
+        ];
       }
     });
   }

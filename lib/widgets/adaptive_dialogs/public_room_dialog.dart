@@ -4,7 +4,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import 'package:fluffychat/l10n/l10n.dart';
-import 'package:fluffychat/utils/fluffy_share.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_text_input_dialog.dart';
 import 'package:flutter/material.dart';
@@ -271,14 +270,6 @@ class PublicRoomDialog extends StatelessWidget {
                         icon: Icons.copy_outlined,
                         onTap: () =>
                             Clipboard.setData(ClipboardData(text: roomLink!)),
-                      ),
-                      AdaptiveIconTextButton(
-                        label: L10n.of(context).share,
-                        icon: Icons.adaptive.share,
-                        onTap: () => FluffyShare.share(
-                          'https://matrix.to/#/$roomLink',
-                          context,
-                        ),
                       ),
                     ],
                   ),

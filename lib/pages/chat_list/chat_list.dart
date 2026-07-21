@@ -14,6 +14,7 @@ import 'package:fluffychat/utils/error_reporter.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/utils/qnskk_homeserver.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
 import 'package:fluffychat/utils/show_update_snackbar.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_modal_action_popup.dart';
@@ -175,37 +176,68 @@ class ChatListController extends State<ChatList>
     SearchUserDirectoryResponse? userSearchResult;
     QueryPublicRoomsResponse? roomSearchResult;
     final searchQuery = searchController.text.trim();
+    final userId = qnskkUserIdFromInput(searchQuery);
+    final roomAlias = qnskkRoomAliasFromInput(searchQuery);
+    final hasForeignStructuredId =
+        searchQuery.contains(':') && userId == null && roomAlias == null;
     try {
-      roomSearchResult = await client.queryPublicRooms(
-        filter: PublicRoomQueryFilter(genericSearchTerm: searchQuery),
-        limit: 20,
-      );
+      if (hasForeignStructuredId) {
+        roomSearchResult = QueryPublicRoomsResponse(chunk: []);
+        userSearchResult = SearchUserDirectoryResponse(
+          limited: false,
+          results: [],
+        );
+      } else {
+        roomSearchResult = await client.queryPublicRooms(
+          filter: PublicRoomQueryFilter(
+            genericSearchTerm: roomAlias?.localpart ?? searchQuery,
+          ),
+          limit: 20,
+        );
+        roomSearchResult.chunk.removeWhere((room) {
+          final canonicalAlias = room.canonicalAlias;
+          return (canonicalAlias != null &&
+                  !isQnskkRoomAlias(canonicalAlias)) ||
+              room.roomId.domain != qnskkHomeserverHost;
+        });
 
-      if (searchQuery.isValidMatrixIdStrict() &&
-          searchQuery.sigil == '#' &&
-          roomSearchResult.chunk.any(
-                (room) => room.canonicalAlias == searchQuery,
-              ) ==
-              false) {
-        final response = await client.getRoomIdByAlias(searchQuery);
-        final roomId = response.roomId;
-        if (roomId != null) {
-          roomSearchResult.chunk.add(
-            PublishedRoomsChunk(
-              name: searchQuery,
-              guestCanJoin: false,
-              numJoinedMembers: 0,
-              roomId: roomId,
-              worldReadable: false,
-              canonicalAlias: searchQuery,
-            ),
-          );
+        if (roomAlias != null &&
+            roomSearchResult.chunk.any(
+                  (room) => room.canonicalAlias == roomAlias,
+                ) ==
+                false) {
+          final response = await client.getRoomIdByAlias(roomAlias);
+          final roomId = response.roomId;
+          if (roomId != null && roomId.domain == qnskkHomeserverHost) {
+            roomSearchResult.chunk.add(
+              PublishedRoomsChunk(
+                name: roomAlias.localpart,
+                guestCanJoin: false,
+                numJoinedMembers: 0,
+                roomId: roomId,
+                worldReadable: false,
+                canonicalAlias: roomAlias,
+              ),
+            );
+          }
         }
+
+        final userDirectoryResponse = await client.searchUserDirectory(
+          qnskkUserSearchTerm(searchQuery),
+          limit: 20,
+        );
+        final userProfiles = userDirectoryResponse.results
+            .where((profile) => isQnskkUserId(profile.userId))
+            .toList();
+        if (userId != null &&
+            !userProfiles.any((profile) => profile.userId == userId)) {
+          userProfiles.insert(0, Profile(userId: userId));
+        }
+        userSearchResult = SearchUserDirectoryResponse(
+          limited: userDirectoryResponse.limited,
+          results: userProfiles,
+        );
       }
-      userSearchResult = await client.searchUserDirectory(
-        searchController.text,
-        limit: 20,
-      );
     } catch (e, s) {
       Logs().w('Searching has crashed', e, s);
       if (!mounted) return;

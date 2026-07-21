@@ -5,6 +5,7 @@
 
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/invitation_selection/invitation_selection.dart';
+import 'package:fluffychat/utils/qnskk_homeserver.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:fluffychat/widgets/matrix.dart';
@@ -190,7 +191,7 @@ class _InviteContactListTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        profile.userId,
+        qnskkDisplayUserId(profile.userId),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(color: theme.colorScheme.secondary),

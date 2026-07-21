@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/utils/qnskk_homeserver.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:flutter/material.dart';
@@ -55,7 +56,7 @@ class SettingsIgnoreListView extends StatelessWidget {
                         onSubmitted: (_) => controller.ignoreUser(context),
                         decoration: InputDecoration(
                           errorText: controller.errorText,
-                          hintText: '@bad_guy:domain.abc',
+                          hintText: 'test1',
                           floatingLabelBehavior: FloatingLabelBehavior.always,
                           labelText: L10n.of(context).blockUsername,
                           suffixIcon: IconButton(
@@ -78,7 +79,7 @@ class SettingsIgnoreListView extends StatelessWidget {
                   child: ListView.builder(
                     itemCount: client.ignoredUsers.length,
                     itemBuilder: (c, i) => ListTile(
-                      title: Text(client.ignoredUsers[i]),
+                      title: Text(qnskkDisplayUserId(client.ignoredUsers[i])),
                       trailing: IconButton(
                         tooltip: L10n.of(context).delete,
                         icon: const Icon(Icons.delete_outlined),

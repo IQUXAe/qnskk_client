@@ -32,8 +32,7 @@ class QrCodeViewer extends StatelessWidget {
     final imageResult = await showFutureLoadingDialog(
       context: context,
       future: () {
-        final inviteLink = 'https://matrix.to/#/$content';
-        final image = QRImage(inviteLink, size: 256, radius: 1).generate();
+        final image = QRImage(content, size: 256, radius: 1).generate();
         return compute(encodePng, image);
       },
     );
@@ -51,7 +50,6 @@ class QrCodeViewer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final inviteLink = 'https://matrix.to/#/$content';
     return Scaffold(
       backgroundColor: Colors.black.withAlpha(128),
       extendBodyBehindAppBar: true,
@@ -73,7 +71,7 @@ class QrCodeViewer extends StatelessWidget {
               backgroundColor: Colors.black.withAlpha(128),
             ),
             icon: Icon(Icons.adaptive.share_outlined),
-            onPressed: () => FluffyShare.share(inviteLink, context),
+            onPressed: () => FluffyShare.share(content, context),
             color: Colors.white,
             tooltip: L10n.of(context).share,
           ),
@@ -110,7 +108,7 @@ class QrCodeViewer extends StatelessWidget {
                   maxWidth: FluffyThemes.columnWidth,
                 ),
                 child: PrettyQrView.data(
-                  data: inviteLink,
+                  data: content,
                   decoration: PrettyQrDecoration(
                     shape: PrettyQrSmoothSymbol(
                       roundFactor: 1,

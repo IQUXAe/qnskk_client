@@ -4,9 +4,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/utils/qnskk_homeserver.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:flutter/material.dart';
-import 'package:matrix/matrix.dart';
 
 import '../../widgets/matrix.dart';
 import 'settings_ignore_list_view.dart';
@@ -35,9 +35,9 @@ class SettingsIgnoreListController extends State<SettingsIgnoreList> {
   String? errorText;
 
   void ignoreUser(BuildContext context) {
-    final userId = controller.text.trim();
-    if (userId.isEmpty) return;
-    if (!userId.isValidMatrixIdStrict() || userId.sigil != '@') {
+    final userId = qnskkUserIdFromInput(controller.text);
+    if (controller.text.trim().isEmpty) return;
+    if (userId == null) {
       setState(() {
         errorText = L10n.of(context).invalidInput;
       });

@@ -10,9 +10,7 @@ import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:matrix/matrix.dart' hide Result;
-import 'package:url_launcher/url_launcher_string.dart';
 
-import '../../utils/fluffy_share.dart';
 import 'chat_list.dart';
 
 class ClientChooserButton extends StatelessWidget {
@@ -52,16 +50,6 @@ class ClientChooserButton extends StatelessWidget {
         ),
       ),
       PopupMenuItem(
-        value: SettingsAction.invite,
-        child: Row(
-          children: [
-            Icon(Icons.adaptive.share_outlined),
-            const SizedBox(width: 18),
-            Text(L10n.of(context).inviteContact),
-          ],
-        ),
-      ),
-      PopupMenuItem(
         value: SettingsAction.archive,
         child: Row(
           children: [
@@ -78,16 +66,6 @@ class ClientChooserButton extends StatelessWidget {
             const Icon(Icons.settings_outlined),
             const SizedBox(width: 18),
             Text(L10n.of(context).settings),
-          ],
-        ),
-      ),
-      PopupMenuItem(
-        value: SettingsAction.support,
-        child: Row(
-          children: [
-            Icon(Icons.favorite, color: Colors.red),
-            const SizedBox(width: 18),
-            Text(L10n.of(context).supportFluffyChat),
           ],
         ),
       ),
@@ -208,14 +186,6 @@ class ClientChooserButton extends StatelessWidget {
         case SettingsAction.newGroup:
           context.go('/rooms/newgroup');
           break;
-        case SettingsAction.invite:
-          FluffyShare.shareInviteLink(context);
-          break;
-        case SettingsAction.support:
-          launchUrlString(
-            'https://fluffychat.im/faq/#how_can_i_support_fluffychat',
-          );
-          break;
         case SettingsAction.settings:
           context.go('/rooms/settings');
           break;
@@ -230,12 +200,4 @@ class ClientChooserButton extends StatelessWidget {
   }
 }
 
-enum SettingsAction {
-  addAccount,
-  newGroup,
-  setStatus,
-  invite,
-  support,
-  settings,
-  archive,
-}
+enum SettingsAction { addAccount, newGroup, setStatus, settings, archive }
