@@ -34,6 +34,13 @@ class _IsolateResult {
   _IsolateResult({required this.nonce, required this.ciphertext});
 }
 
+class _EncryptedBytes {
+  final Uint8List nonce;
+  final Uint8List ciphertext;
+
+  _EncryptedBytes({required this.nonce, required this.ciphertext});
+}
+
 /// Builds JSON, compresses, and encrypts in a background isolate.
 Future<_IsolateResult> _compressAndEncrypt(_IsolatePayload payload) async {
   final bodyB64 = payload.bodyBytes.isNotEmpty
@@ -77,6 +84,24 @@ Uint8List _randomBytes(int length) {
   return bytes;
 }
 
+Future<_EncryptedBytes> _encryptBytes(
+  Uint8List data,
+  Uint8List encryptionKey,
+) async {
+  final chacha20 = Chacha20.poly1305Aead();
+  final nonce = _randomBytes(12);
+  final secretBox = await chacha20.encrypt(
+    data,
+    secretKey: SecretKey(encryptionKey),
+    nonce: nonce,
+  );
+  final full = Uint8List.fromList(secretBox.concatenation());
+  return _EncryptedBytes(
+    nonce: Uint8List.fromList(full.sublist(0, 12)),
+    ciphertext: Uint8List.fromList(full.sublist(12)),
+  );
+}
+
 /// HTTP client that tunnels POST/PUT/DELETE requests through OPTIONS
 /// with ChaCha20-Poly1305 encryption and zstd compression.
 class TunnelHttpClient extends http.BaseClient {
@@ -94,6 +119,12 @@ class TunnelHttpClient extends http.BaseClient {
   static const String headerChunkIndex = 'x-qnskk-chunk-index';
   static const String headerChunkTotal = 'x-qnskk-chunk-total';
   static const String headerClientPubkey = 'x-qnskk-client-pubkey';
+  static const String headerMediaOp = 'x-qnskk-media-op';
+  static const String headerMediaSession = 'x-qnskk-media-session';
+  static const String headerMediaIndex = 'x-qnskk-media-index';
+  static const String headerMediaPayload = 'x-qnskk-media-payload';
+
+  static const int _maxMediaParallelChunks = 16;
 
   static final Random _random = Random.secure();
 
@@ -129,6 +160,9 @@ class TunnelHttpClient extends http.BaseClient {
         'Tunnel request body exceeds 100 MiB limit',
         request.url,
       );
+    }
+    if (_isMatrixMediaUpload(request)) {
+      return _mediaUploadRequest(request, bodyBytes);
     }
 
     final headers = <String, String>{};
@@ -170,6 +204,112 @@ class TunnelHttpClient extends http.BaseClient {
       return builder.toBytes();
     }
     return Uint8List(0);
+  }
+
+  bool _isMatrixMediaUpload(http.BaseRequest request) {
+    if (request.method.toUpperCase() != 'POST') return false;
+    final path = request.url.path;
+    return path.endsWith('/_matrix/media/v3/upload') ||
+        path.endsWith('/_matrix/media/r0/upload') ||
+        path.endsWith('/_matrix/client/v1/media/upload');
+  }
+
+  Future<http.StreamedResponse> _mediaUploadRequest(
+    http.BaseRequest request,
+    Uint8List bodyBytes,
+  ) async {
+    final session = base64UrlNoPad(_randomBytes(18));
+    const chunkSize = maxChunkSize;
+    final chunkTotal = max(1, (bodyBytes.length + chunkSize - 1) ~/ chunkSize);
+    final headers = <String, String>{};
+    request.headers.forEach((key, value) {
+      if (key.toLowerCase() != 'host') headers[key] = value;
+    });
+
+    final initPayload = <String, dynamic>{
+      'session': session,
+      'path':
+          request.url.path +
+          (request.url.hasQuery ? '?${request.url.query}' : ''),
+      'headers': headers,
+      'total_size': bodyBytes.length,
+      'chunk_size': chunkSize,
+      'chunk_total': chunkTotal,
+      if (request.url.queryParameters['filename'] != null)
+        'filename': request.url.queryParameters['filename'],
+      if (request.headers['content-type'] != null)
+        'content_type': request.headers['content-type'],
+    };
+
+    final init = await _encryptBytes(
+      Uint8List.fromList(utf8.encode(jsonEncode(initPayload))),
+      _encryptionKey,
+    );
+    final initResponse = await _inner.send(
+      _buildMediaRequest(
+        url: request.url,
+        op: 'init',
+        session: session,
+        nonce: init.nonce,
+        payload: init.ciphertext,
+      ),
+    );
+    if (initResponse.statusCode != 200) {
+      await initResponse.stream.drain();
+      throw http.ClientException('Media tunnel init failed', request.url);
+    }
+    await initResponse.stream.drain();
+
+    for (var start = 0; start < chunkTotal; start += _maxMediaParallelChunks) {
+      final end = min(start + _maxMediaParallelChunks, chunkTotal);
+      final futures = <Future<http.StreamedResponse>>[];
+      for (var index = start; index < end; index++) {
+        final chunkStart = index * chunkSize;
+        final chunkEnd = min(chunkStart + chunkSize, bodyBytes.length);
+        final chunk = Uint8List.sublistView(bodyBytes, chunkStart, chunkEnd);
+        futures.add(_sendMediaChunk(request.url, session, index, chunk));
+      }
+      final responses = await Future.wait(futures);
+      for (final response in responses) {
+        await response.stream.drain();
+        if (response.statusCode != 202) {
+          throw http.ClientException('Media tunnel chunk failed', request.url);
+        }
+      }
+    }
+
+    final commit = await _encryptBytes(
+      Uint8List.fromList(utf8.encode(jsonEncode({'session': session}))),
+      _encryptionKey,
+    );
+    return _inner.send(
+      _buildMediaRequest(
+        url: request.url,
+        op: 'commit',
+        session: session,
+        nonce: commit.nonce,
+        payload: commit.ciphertext,
+      ),
+    );
+  }
+
+  Future<http.StreamedResponse> _sendMediaChunk(
+    Uri url,
+    String session,
+    int index,
+    Uint8List chunk,
+  ) async {
+    final encrypted = await _encryptBytes(chunk, _encryptionKey);
+    return _inner.send(
+      _buildMediaRequest(
+        url: url,
+        op: 'chunk',
+        session: session,
+        index: index,
+        nonce: encrypted.nonce,
+        payload: encrypted.ciphertext,
+      ),
+    );
   }
 
   List<Uint8List> _splitIntoChunks(Uint8List data) {
@@ -249,6 +389,25 @@ class TunnelHttpClient extends http.BaseClient {
     request.headers[headerChunkIndex] = index.toString();
     request.headers[headerChunkTotal] = total.toString();
     assert(request.headers[headerPayload]!.length <= maxHeaderValueSize);
+    return request;
+  }
+
+  http.Request _buildMediaRequest({
+    required Uri url,
+    required String op,
+    required String session,
+    required Uint8List nonce,
+    required Uint8List payload,
+    int? index,
+  }) {
+    final request = http.Request('OPTIONS', url.replace(path: '/_qnskk/media'));
+    request.headers[headerClientPubkey] = base64UrlNoPad(_clientPublicKey);
+    request.headers[headerMediaOp] = op;
+    request.headers[headerMediaSession] = session;
+    request.headers[headerNonce] = base64UrlNoPad(nonce);
+    request.headers[headerMediaPayload] = base64UrlNoPad(payload);
+    if (index != null) request.headers[headerMediaIndex] = index.toString();
+    assert(request.headers[headerMediaPayload]!.length <= maxHeaderValueSize);
     return request;
   }
 

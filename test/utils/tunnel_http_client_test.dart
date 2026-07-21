@@ -17,6 +17,9 @@ class _RecordingClient extends http.BaseClient {
       requests.add(request);
     }
     if (errorToThrow != null) throw errorToThrow!;
+    if (request.headers['x-qnskk-media-op'] == 'chunk') {
+      return http.StreamedResponse(Stream<List<int>>.empty(), 202);
+    }
     if (request.headers['x-qnskk-chunk-total'] != null) {
       final index = int.tryParse(request.headers['x-qnskk-chunk-index'] ?? '');
       final total = int.tryParse(request.headers['x-qnskk-chunk-total'] ?? '');
@@ -187,6 +190,38 @@ void main() {
         final payloadB64 = sent.headers['x-qnskk-tunnel-payload']!;
         // base64 adds ~33% overhead so a 20 KB chunk encodes to ~28 KB.
         expect(payloadB64.length, lessThanOrEqualTo(28 * 1024));
+      }
+    });
+
+    test('Matrix media uploads use dedicated media tunnel', () async {
+      final req = http.Request(
+        'POST',
+        Uri.parse(
+          'https://example.com/_matrix/media/v3/upload?filename=file.bin',
+        ),
+      );
+      req.headers['authorization'] = 'Bearer media';
+      req.headers['content-type'] = 'application/octet-stream';
+      req.bodyBytes = Uint8List.fromList(List.generate(45 * 1024, (i) => i));
+
+      await client.send(req);
+
+      expect(inner.requests.first.url.path, '/_qnskk/media');
+      expect(inner.requests.first.headers['x-qnskk-media-op'], 'init');
+      expect(inner.requests.last.headers['x-qnskk-media-op'], 'commit');
+
+      final chunks = inner.requests
+          .where((r) => r.headers['x-qnskk-media-op'] == 'chunk')
+          .toList();
+      expect(chunks, hasLength(3));
+      for (var i = 0; i < chunks.length; i++) {
+        expect(chunks[i].method, 'OPTIONS');
+        expect(chunks[i].headers['x-qnskk-media-index'], '$i');
+        expect(chunks[i].headers['x-qnskk-media-payload'], isNotNull);
+        expect(
+          chunks[i].headers['x-qnskk-media-payload']!.length,
+          lessThanOrEqualTo(31 * 1024),
+        );
       }
     });
 
