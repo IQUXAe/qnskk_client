@@ -155,40 +155,11 @@ class ChatListController extends State<ChatList>
 
   bool isSearchMode = false;
   Future<QueryPublicRoomsResponse>? publicRoomsResponse;
-  String? searchServer;
   Timer? _coolDown;
   SearchUserDirectoryResponse? userSearchResult;
   QueryPublicRoomsResponse? roomSearchResult;
 
   bool isSearching = false;
-  static const String _serverStoreNamespace = 'im.fluffychat.search.server';
-
-  Future<void> setServer() async {
-    final matrix = Matrix.of(context);
-    final l10n = L10n.of(context);
-    final newServer = await showTextInputDialog(
-      useRootNavigator: false,
-      title: l10n.changeTheHomeserver,
-      context: context,
-      okLabel: l10n.ok,
-      cancelLabel: l10n.cancel,
-      prefixText: 'https://',
-      hintText: matrix.client.homeserver?.host,
-      initialText: searchServer,
-      keyboardType: TextInputType.url,
-      autocorrect: false,
-      validator: (server) =>
-          server.contains('.') == true ? null : l10n.invalidServerName,
-    );
-    if (newServer == null) return;
-    if (!mounted) return;
-    matrix.store.setString(_serverStoreNamespace, newServer);
-    setState(() {
-      searchServer = newServer;
-    });
-    _coolDown?.cancel();
-    _coolDown = Timer(const Duration(milliseconds: 500), _search);
-  }
 
   final TextEditingController searchController = TextEditingController();
   final FocusNode searchFocusNode = FocusNode();
@@ -206,7 +177,6 @@ class ChatListController extends State<ChatList>
     final searchQuery = searchController.text.trim();
     try {
       roomSearchResult = await client.queryPublicRooms(
-        server: searchServer,
         filter: PublicRoomQueryFilter(genericSearchTerm: searchQuery),
         limit: 20,
       );
@@ -383,9 +353,6 @@ class ChatListController extends State<ChatList>
     Matrix.of(context).voipPlugin?.context = context;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        searchServer = Matrix.of(
-          context,
-        ).store.getString(_serverStoreNamespace);
         Matrix.of(context).backgroundPush?.setupPush();
         UpdateNotifier.showUpdateDialog(context);
       }
