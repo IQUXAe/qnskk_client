@@ -52,14 +52,14 @@ enum AppSettings<T> {
   ),
   displayChatDetailsColumn('chat.fluffy.display_chat_details_column', false),
   // AppConfig-mirrored settings
-  applicationName<String>('chat.fluffy.application_name', 'FluffyChat'),
-  defaultHomeserver<String>('chat.fluffy.default_homeserver', 'matrix.org'),
+  applicationName<String>('chat.fluffy.application_name', 'QNSKK'),
+  defaultHomeserver<String>('chat.fluffy.default_homeserver', 'api.qnskk.top'),
   // colorSchemeSeed stored as ARGB int
   colorSchemeSeedInt<int>('chat.fluffy.color_scheme_seed', 0xFF5625BA),
   emojiSuggestionLocale<String>('emoji_suggestion_locale', ''),
   enableSoftLogout<bool>('chat.fluffy.enable_soft_logout', false),
   enableMatrixNativeOIDC<bool>('chat.fluffy.enable_matrix_native_oidc', false),
-  presetHomeserver<String>('chat.fluffy.preset_homeserver', ''),
+  presetHomeserver<String>('chat.fluffy.preset_homeserver', 'api.qnskk.top'),
   welcomeText<String>('chat.fluffy.welcome_text', ''),
   website<String>('chat.fluffy.website_url', 'https://fluffychat.im'),
   logoUrl<String>(
@@ -142,7 +142,32 @@ enum AppSettings<T> {
       }
     }
 
+    await _enforceQnskkDefaults(store);
+
     return store;
+  }
+
+  static Future<void> _enforceQnskkDefaults(SharedPreferences store) async {
+    const qnskkHomeserver = 'api.qnskk.top';
+
+    final applicationName = store.getString(AppSettings.applicationName.key);
+    if (applicationName == null ||
+        applicationName.isEmpty ||
+        applicationName == 'FluffyChat') {
+      await store.setString(AppSettings.applicationName.key, 'QNSKK');
+    }
+
+    final defaultHomeserver = store.getString(
+      AppSettings.defaultHomeserver.key,
+    );
+    if (defaultHomeserver != qnskkHomeserver) {
+      await store.setString(AppSettings.defaultHomeserver.key, qnskkHomeserver);
+    }
+
+    final presetHomeserver = store.getString(AppSettings.presetHomeserver.key);
+    if (presetHomeserver != qnskkHomeserver) {
+      await store.setString(AppSettings.presetHomeserver.key, qnskkHomeserver);
+    }
   }
 }
 

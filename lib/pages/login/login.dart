@@ -6,7 +6,7 @@
 import 'dart:async';
 
 import 'package:fluffychat/l10n/l10n.dart';
-import 'package:fluffychat/utils/localized_exception_extension.dart';
+import 'package:fluffychat/utils/qnskk_homeserver.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_text_input_dialog.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
@@ -75,6 +75,7 @@ class LoginController extends State<Login> {
         identifier = AuthenticationUserIdentifier(user: username);
       }
       final client = await matrix.getLoginClient();
+      await ensureQnskkHomeserver(client);
       await client.login(
         LoginType.mLoginPassword,
         identifier: identifier,
@@ -112,63 +113,7 @@ class LoginController extends State<Login> {
 
   Future<void> _checkWellKnown(String userId) async {
     if (mounted) setState(() => usernameError = null);
-    if (!userId.isValidMatrixIdStrict()) return;
-    final oldHomeserver = widget.client.homeserver;
-    try {
-      var newDomain = Uri.https(userId.domain!, '');
-      widget.client.homeserver = newDomain;
-      DiscoveryInformation? wellKnownInformation;
-      try {
-        wellKnownInformation = await widget.client.getWellknown();
-        if (wellKnownInformation.mHomeserver.baseUrl.toString().isNotEmpty) {
-          newDomain = wellKnownInformation.mHomeserver.baseUrl;
-        }
-      } catch (_) {
-        // do nothing, newDomain is already set to a reasonable fallback
-      }
-      if (newDomain != oldHomeserver) {
-        await widget.client.checkHomeserver(newDomain);
-
-        if (widget.client.homeserver == null) {
-          widget.client.homeserver = oldHomeserver;
-          // okay, the server we checked does not appear to be a matrix server
-          Logs().v(
-            '$newDomain is not running a homeserver, asking to use $oldHomeserver',
-          );
-          if (!mounted) return;
-          final l10n = L10n.of(context);
-          final dialogResult = await showOkCancelAlertDialog(
-            context: context,
-            useRootNavigator: false,
-            title: l10n.noMatrixServer(
-              newDomain.toString(),
-              oldHomeserver.toString(),
-            ),
-            okLabel: l10n.ok,
-            cancelLabel: l10n.cancel,
-          );
-          if (!mounted) return;
-          if (dialogResult == OkCancelResult.ok) {
-            if (mounted) setState(() => usernameError = null);
-          } else {
-            Navigator.of(context, rootNavigator: false).pop();
-            return;
-          }
-        }
-        usernameError = null;
-        if (mounted) setState(() {});
-      } else {
-        widget.client.homeserver = oldHomeserver;
-        if (mounted) {
-          setState(() {});
-        }
-      }
-    } catch (e) {
-      widget.client.homeserver = oldHomeserver;
-      if (!mounted) return;
-      usernameError = e.toLocalizedString(context);
-      if (mounted) setState(() {});
-    }
+    widget.client.homeserver = qnskkHomeserverUri();
   }
 
   Future<void> passwordForgotten() async {

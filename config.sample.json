@@ -1,7 +1,7 @@
 {
-  "applicationName": "FluffyChat",
-  "defaultHomeserver": "matrix.org",
-  "presetHomeserver": "",
+  "applicationName": "QNSKK",
+  "defaultHomeserver": "api.qnskk.top",
+  "presetHomeserver": "api.qnskk.top",
   "welcomeText": "",
   "privacyUrl": "https://github.com/krille-chan/fluffychat/blob/main/PRIVACY.md",
   "audioRecordingNumChannels": 1,

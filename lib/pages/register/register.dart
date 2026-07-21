@@ -1,5 +1,6 @@
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/utils/qnskk_homeserver.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -45,6 +46,7 @@ class RegisterController extends State<Register> {
     setState(() => loading = true);
 
     try {
+      await ensureQnskkHomeserver(widget.client);
       await widget.client.register(
         username: username,
         password: password,

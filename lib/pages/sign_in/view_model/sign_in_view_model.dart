@@ -3,16 +3,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import 'dart:convert';
-
-import 'package:collection/collection.dart';
-import 'package:fluffychat/config/app_config.dart';
-import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/pages/sign_in/view_model/model/public_homeserver_data.dart';
 import 'package:fluffychat/pages/sign_in/view_model/sign_in_state.dart';
+import 'package:fluffychat/utils/qnskk_homeserver.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/widgets.dart';
-import 'package:matrix/matrix_api_lite/utils/logs.dart';
 
 class SignInViewModel extends ValueNotifier<SignInState> {
   final MatrixState matrixService;
@@ -34,7 +29,7 @@ class SignInViewModel extends ValueNotifier<SignInState> {
 
   void _filterHomeservers() {
     final filterText = filterTextController.text.trim().toLowerCase();
-    final filteredPublicHomeservers =
+    value.filteredPublicHomeservers =
         value.publicHomeservers.data
             ?.where(
               (homeserver) =>
@@ -42,15 +37,6 @@ class SignInViewModel extends ValueNotifier<SignInState> {
             )
             .toList() ??
         [];
-    if (filterText.length >= 3 &&
-        (filterText.contains('.') || filterText.endsWith('localhost')) &&
-        Uri.tryParse(filterText) != null &&
-        !filteredPublicHomeservers.any(
-          (homeserver) => homeserver.name == filterText,
-        )) {
-      filteredPublicHomeservers.add(PublicHomeserverData(name: filterText));
-    }
-    value.filteredPublicHomeservers = filteredPublicHomeservers;
     notifyListeners();
   }
 
@@ -58,47 +44,13 @@ class SignInViewModel extends ValueNotifier<SignInState> {
     notifyListeners();
     value.publicHomeservers = AsyncSnapshot.waiting();
     final defaultHomeserverData = PublicHomeserverData(
-      name: AppSettings.defaultHomeserver.value,
+      name: qnskkHomeserverHost,
     );
-    try {
-      final client = await matrixService.getLoginClient();
-      final response = await client.httpClient.get(AppConfig.homeserverList);
-      final json = jsonDecode(response.body) as Map<String, dynamic>;
-      final homeserverJsonList = json['public_servers'] as List;
-
-      final publicHomeservers = homeserverJsonList
-          .map((json) => PublicHomeserverData.fromJson(json))
-          .toList();
-
-      if (signUp) {
-        publicHomeservers.removeWhere((server) {
-          return server.regMethod == null;
-        });
-      }
-
-      final defaultServer = publicHomeservers.singleWhereOrNull(
-        (server) => server.name == AppSettings.defaultHomeserver.value,
-      );
-
-      if (defaultServer == null) {
-        publicHomeservers.insert(0, defaultHomeserverData);
-      }
-
-      value.selectedHomeserver =
-          value.selectedHomeserver ?? publicHomeservers.first;
-      value.publicHomeservers = AsyncSnapshot.withData(
-        ConnectionState.done,
-        publicHomeservers,
-      );
-      notifyListeners();
-    } catch (e, s) {
-      Logs().w('Unable to fetch public homeservers...', e, s);
-      value.selectedHomeserver = defaultHomeserverData;
-      value.publicHomeservers = AsyncSnapshot.withData(ConnectionState.done, [
-        defaultHomeserverData,
-      ]);
-      notifyListeners();
-    }
+    value.selectedHomeserver = defaultHomeserverData;
+    value.publicHomeservers = AsyncSnapshot.withData(ConnectionState.done, [
+      defaultHomeserverData,
+    ]);
+    notifyListeners();
     _filterHomeservers();
   }
 

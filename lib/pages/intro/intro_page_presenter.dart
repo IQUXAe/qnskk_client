@@ -5,12 +5,10 @@
 
 import 'dart:convert';
 
-import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/pages/intro/intro_page.dart';
-import 'package:fluffychat/pages/sign_in/view_model/model/public_homeserver_data.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/oidc_session_json_extension.dart';
-import 'package:fluffychat/utils/sign_in_flows/check_homeserver.dart';
+import 'package:fluffychat/utils/qnskk_homeserver.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -40,12 +38,7 @@ class _IntroPagePresenterState extends State<IntroPagePresenter> {
 
   Future<void> _finishOidcLogin() async {
     final store = await SharedPreferences.getInstance();
-    final storedHomeserverString = store.getString(
-      OidcSessionJsonExtension.homeserverStoreKey,
-    );
-    final homeserverUrl = storedHomeserverString == null
-        ? null
-        : Uri.tryParse(storedHomeserverString);
+    final homeserverUrl = qnskkHomeserverUri();
 
     final oidcSessionString = store.getString(
       OidcSessionJsonExtension.storeKey,
@@ -58,7 +51,7 @@ class _IntroPagePresenterState extends State<IntroPagePresenter> {
     await store.remove(OidcSessionJsonExtension.homeserverStoreKey);
     if (!mounted) return;
 
-    if (homeserverUrl == null || session == null) {
+    if (session == null) {
       setState(() {
         isLoading = false;
       });
@@ -98,19 +91,30 @@ class _IntroPagePresenterState extends State<IntroPagePresenter> {
     }
   }
 
-  void _login() {
-    final presetHomeserver = AppSettings.presetHomeserver.value;
-    if (presetHomeserver.isEmpty) {
-      context.go('${GoRouterState.of(context).uri.path}/sign_in');
-      return;
+  Future<void> _openAuthForm(String route) async {
+    setState(() {
+      isLoading = true;
+      loggingInToHomeserver = qnskkHomeserverUri().origin;
+    });
+    try {
+      final client = await Matrix.of(context).getLoginClient();
+      client.homeserver = qnskkHomeserverUri();
+      if (!mounted) return;
+      context.go('${GoRouterState.of(context).uri.path}/$route', extra: client);
+    } catch (e, s) {
+      Logs().w('Unable to open auth form', e, s);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toLocalizedString(context))));
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+          loggingInToHomeserver = null;
+        });
+      }
     }
-
-    connectToHomeserverFlow(
-      PublicHomeserverData(name: presetHomeserver),
-      context,
-      (snapshot) {},
-      false,
-    );
   }
 
   @override
@@ -118,11 +122,8 @@ class _IntroPagePresenterState extends State<IntroPagePresenter> {
     return IntroPage(
       isLoading: isLoading,
       loggingInToHomeserver: loggingInToHomeserver,
-      hasPresetHomeserver: AppSettings.presetHomeserver.value.isNotEmpty,
-      welcomeText: AppSettings.welcomeText.value.isEmpty
-          ? null
-          : AppSettings.welcomeText.value,
-      login: _login,
+      login: () => _openAuthForm('login'),
+      register: () => _openAuthForm('register'),
     );
   }
 }
