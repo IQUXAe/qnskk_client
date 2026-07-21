@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -33,6 +34,16 @@ class _RecordingClient extends http.BaseClient {
           200,
           headers: {'content-type': 'application/json'},
         );
+  }
+}
+
+class _UnsendableRecordingClient extends _RecordingClient {
+  final ReceivePort port = ReceivePort();
+
+  @override
+  void close() {
+    port.close();
+    super.close();
   }
 }
 
@@ -103,6 +114,26 @@ void main() {
       expect(sent.headers['x-qnskk-client-pubkey'], isNotNull);
     });
 
+    test('POST isolate work does not capture the inner HTTP client', () async {
+      final unsendableInner = _UnsendableRecordingClient();
+      final unsendableClient = TunnelHttpClient(
+        inner: unsendableInner,
+        encryptionKey: Uint8List.fromList(List.generate(32, (i) => i)),
+        clientPublicKey: Uint8List.fromList(List.generate(32, (i) => i + 32)),
+      );
+      addTearDown(unsendableClient.close);
+
+      final req = http.Request(
+        'POST',
+        Uri.parse('https://example.com/_matrix/client/v3/login'),
+      )..bodyBytes = utf8.encode('{"type":"m.login.password"}');
+
+      await unsendableClient.send(req);
+
+      expect(unsendableInner.requests, hasLength(1));
+      expect(unsendableInner.requests.single.method, 'OPTIONS');
+    });
+
     test('PUT requests are tunneled through OPTIONS', () async {
       final req = http.Request(
         'PUT',
@@ -139,6 +170,33 @@ void main() {
       expect(inner.requests, hasLength(1));
       expect(inner.requests.single.method, 'OPTIONS');
     });
+
+    test(
+      'Empty successful tunnel response is reported before JSON parsing',
+      () async {
+        inner.nextResponse = http.StreamedResponse(
+          Stream<List<int>>.empty(),
+          204,
+          headers: {'server': 'cdn'},
+        );
+        final req = http.Request(
+          'POST',
+          Uri.parse('https://example.com/_matrix/client/v3/register'),
+        );
+        req.bodyBytes = utf8.encode('{}');
+
+        await expectLater(
+          client.send(req),
+          throwsA(
+            isA<http.ClientException>().having(
+              (e) => e.message,
+              'message',
+              contains('Tunnel returned empty HTTP 204 response'),
+            ),
+          ),
+        );
+      },
+    );
 
     test('Large POST splits into multiple chunks', () async {
       final req = http.Request(
@@ -213,7 +271,7 @@ void main() {
       final chunks = inner.requests
           .where((r) => r.headers['x-qnskk-media-op'] == 'chunk')
           .toList();
-      expect(chunks, hasLength(3));
+      expect(chunks, hasLength(4));
       for (var i = 0; i < chunks.length; i++) {
         expect(chunks[i].method, 'OPTIONS');
         expect(chunks[i].headers['x-qnskk-media-index'], '$i');

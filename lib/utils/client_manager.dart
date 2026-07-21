@@ -156,7 +156,7 @@ abstract class ClientManager {
       },
       nativeImplementations: nativeImplementations,
       defaultNetworkRequestTimeout: const Duration(minutes: 30),
-      enableDehydratedDevices: true,
+      enableDehydratedDevices: false,
       shareKeysWith:
           ShareKeysWith.values.singleWhereOrNull(
             (share) => share.name == shareKeysWith,

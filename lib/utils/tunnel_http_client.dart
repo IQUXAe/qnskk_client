@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_zstd/just_zstd.dart';
+import 'package:matrix/matrix_api_lite/utils/logs.dart';
 
 String base64UrlNoPad(List<int> bytes) =>
     base64Url.encode(bytes).replaceAll('=', '');
@@ -41,6 +42,32 @@ class _EncryptedBytes {
   _EncryptedBytes({required this.nonce, required this.ciphertext});
 }
 
+class _MediaChunkPayload {
+  final int index;
+  final Uint8List bytes;
+
+  _MediaChunkPayload({required this.index, required this.bytes});
+}
+
+class _MediaChunkBatchPayload {
+  final List<_MediaChunkPayload> chunks;
+  final Uint8List encryptionKey;
+
+  _MediaChunkBatchPayload({required this.chunks, required this.encryptionKey});
+}
+
+class _EncryptedMediaChunk {
+  final int index;
+  final Uint8List nonce;
+  final Uint8List ciphertext;
+
+  _EncryptedMediaChunk({
+    required this.index,
+    required this.nonce,
+    required this.ciphertext,
+  });
+}
+
 /// Builds JSON, compresses, and encrypts in a background isolate.
 Future<_IsolateResult> _compressAndEncrypt(_IsolatePayload payload) async {
   final bodyB64 = payload.bodyBytes.isNotEmpty
@@ -73,6 +100,23 @@ Future<_IsolateResult> _compressAndEncrypt(_IsolatePayload payload) async {
     nonce: Uint8List.fromList(full.sublist(0, 12)),
     ciphertext: Uint8List.fromList(full.sublist(12)),
   );
+}
+
+Future<List<_EncryptedMediaChunk>> _encryptMediaChunkBatch(
+  _MediaChunkBatchPayload payload,
+) async {
+  final encryptedChunks = <_EncryptedMediaChunk>[];
+  for (final chunk in payload.chunks) {
+    final encrypted = await _encryptBytes(chunk.bytes, payload.encryptionKey);
+    encryptedChunks.add(
+      _EncryptedMediaChunk(
+        index: chunk.index,
+        nonce: encrypted.nonce,
+        ciphertext: encrypted.ciphertext,
+      ),
+    );
+  }
+  return encryptedChunks;
 }
 
 Uint8List _randomBytes(int length) {
@@ -124,7 +168,8 @@ class TunnelHttpClient extends http.BaseClient {
   static const String headerMediaIndex = 'x-qnskk-media-index';
   static const String headerMediaPayload = 'x-qnskk-media-payload';
 
-  static const int _maxMediaParallelChunks = 16;
+  static const int _mediaChunkSize = minChunkSize;
+  static const int _maxMediaParallelChunks = 4;
 
   static final Random _random = Random.secure();
 
@@ -147,9 +192,10 @@ class TunnelHttpClient extends http.BaseClient {
 
     try {
       return await _tunnelRequest(request);
-    } catch (e) {
+    } catch (e, s) {
       if (e is http.ClientException) rethrow;
-      throw http.ClientException('Tunnel request failed', request.url);
+      Logs().w('Tunnel request failed before receiving a response', e, s);
+      throw http.ClientException('Tunnel request failed: $e', request.url);
     }
   }
 
@@ -169,18 +215,21 @@ class TunnelHttpClient extends http.BaseClient {
     request.headers.forEach((key, value) {
       if (key.toLowerCase() != 'host') headers[key] = value;
     });
+    final originalMethod = request.method;
+    final originalPath =
+        request.url.path +
+        (request.url.hasQuery ? '?${request.url.query}' : '');
+    final encryptionKey = Uint8List.fromList(_encryptionKey);
 
     // Heavy work (JSON build + zstd + encrypt) in background isolate.
     final result = await Isolate.run(
       () => _compressAndEncrypt(
         _IsolatePayload(
           bodyBytes: bodyBytes,
-          method: request.method,
-          path:
-              request.url.path +
-              (request.url.hasQuery ? '?${request.url.query}' : ''),
+          method: originalMethod,
+          path: originalPath,
           headers: headers,
-          encryptionKey: _encryptionKey,
+          encryptionKey: encryptionKey,
         ),
       ),
     );
@@ -219,7 +268,7 @@ class TunnelHttpClient extends http.BaseClient {
     Uint8List bodyBytes,
   ) async {
     final session = base64UrlNoPad(_randomBytes(18));
-    const chunkSize = maxChunkSize;
+    const chunkSize = _mediaChunkSize;
     final chunkTotal = max(1, (bodyBytes.length + chunkSize - 1) ~/ chunkSize);
     final headers = <String, String>{};
     request.headers.forEach((key, value) {
@@ -254,62 +303,167 @@ class TunnelHttpClient extends http.BaseClient {
         payload: init.ciphertext,
       ),
     );
-    if (initResponse.statusCode != 200) {
-      await initResponse.stream.drain();
-      throw http.ClientException('Media tunnel init failed', request.url);
-    }
-    await initResponse.stream.drain();
+    await _validateMediaInitResponse(request.url, initResponse);
 
-    for (var start = 0; start < chunkTotal; start += _maxMediaParallelChunks) {
-      final end = min(start + _maxMediaParallelChunks, chunkTotal);
-      final futures = <Future<http.StreamedResponse>>[];
-      for (var index = start; index < end; index++) {
-        final chunkStart = index * chunkSize;
-        final chunkEnd = min(chunkStart + chunkSize, bodyBytes.length);
-        final chunk = Uint8List.sublistView(bodyBytes, chunkStart, chunkEnd);
-        futures.add(_sendMediaChunk(request.url, session, index, chunk));
-      }
-      final responses = await Future.wait(futures);
-      for (final response in responses) {
-        await response.stream.drain();
-        if (response.statusCode != 202) {
-          throw http.ClientException('Media tunnel chunk failed', request.url);
+    try {
+      for (
+        var start = 0;
+        start < chunkTotal;
+        start += _maxMediaParallelChunks
+      ) {
+        final end = min(start + _maxMediaParallelChunks, chunkTotal);
+        final batch = <_MediaChunkPayload>[];
+        for (var index = start; index < end; index++) {
+          final chunkStart = index * chunkSize;
+          final chunkEnd = min(chunkStart + chunkSize, bodyBytes.length);
+          batch.add(
+            _MediaChunkPayload(
+              index: index,
+              bytes: Uint8List.fromList(
+                Uint8List.sublistView(bodyBytes, chunkStart, chunkEnd),
+              ),
+            ),
+          );
+        }
+
+        final encryptionKey = Uint8List.fromList(_encryptionKey);
+        final encryptedChunks = await Isolate.run(
+          () => _encryptMediaChunkBatch(
+            _MediaChunkBatchPayload(
+              chunks: batch,
+              encryptionKey: encryptionKey,
+            ),
+          ),
+        );
+
+        final futures = <Future<http.StreamedResponse>>[];
+        for (final chunk in encryptedChunks) {
+          futures.add(
+            _sendEncryptedMediaChunk(
+              request.url,
+              session,
+              chunk.index,
+              chunk.nonce,
+              chunk.ciphertext,
+            ),
+          );
+        }
+        final responses = await Future.wait(futures);
+        for (final response in responses) {
+          await response.stream.drain();
+          if (response.statusCode != 202) {
+            throw http.ClientException(
+              'Media tunnel chunk failed',
+              request.url,
+            );
+          }
         }
       }
-    }
 
-    final commit = await _encryptBytes(
-      Uint8List.fromList(utf8.encode(jsonEncode({'session': session}))),
-      _encryptionKey,
-    );
-    return _inner.send(
-      _buildMediaRequest(
-        url: request.url,
-        op: 'commit',
-        session: session,
-        nonce: commit.nonce,
-        payload: commit.ciphertext,
-      ),
-    );
+      final commit = await _encryptBytes(
+        Uint8List.fromList(utf8.encode(jsonEncode({'session': session}))),
+        _encryptionKey,
+      );
+      return _validateMediaCommitResponse(
+        request.url,
+        await _inner.send(
+          _buildMediaRequest(
+            url: request.url,
+            op: 'commit',
+            session: session,
+            nonce: commit.nonce,
+            payload: commit.ciphertext,
+          ),
+        ),
+      );
+    } catch (_) {
+      await _abortMediaUpload(request.url, session);
+      rethrow;
+    }
   }
 
-  Future<http.StreamedResponse> _sendMediaChunk(
+  Future<http.StreamedResponse> _sendEncryptedMediaChunk(
     Uri url,
     String session,
     int index,
-    Uint8List chunk,
-  ) async {
-    final encrypted = await _encryptBytes(chunk, _encryptionKey);
+    Uint8List nonce,
+    Uint8List ciphertext,
+  ) {
     return _inner.send(
       _buildMediaRequest(
         url: url,
         op: 'chunk',
         session: session,
         index: index,
-        nonce: encrypted.nonce,
-        payload: encrypted.ciphertext,
+        nonce: nonce,
+        payload: ciphertext,
       ),
     );
+  }
+
+  Future<void> _validateMediaInitResponse(
+    Uri url,
+    http.StreamedResponse response,
+  ) async {
+    final bodyBytes = await response.stream.toBytes();
+    if (response.statusCode != 200) {
+      throw http.ClientException(
+        'Media tunnel init failed with HTTP ${response.statusCode}',
+        url,
+      );
+    }
+    if (bodyBytes.isEmpty) {
+      throw http.ClientException(
+        'Media tunnel init returned empty HTTP 200 response',
+        url,
+      );
+    }
+  }
+
+  Future<http.StreamedResponse> _validateMediaCommitResponse(
+    Uri url,
+    http.StreamedResponse response,
+  ) async {
+    final bodyBytes = await response.stream.toBytes();
+    if (response.statusCode != 200) {
+      throw http.ClientException(
+        'Media tunnel commit failed with HTTP ${response.statusCode}',
+        url,
+      );
+    }
+    if (bodyBytes.isEmpty) {
+      throw http.ClientException(
+        'Media tunnel commit returned empty HTTP 200 response',
+        url,
+      );
+    }
+    return http.StreamedResponse(
+      Stream<List<int>>.value(bodyBytes),
+      response.statusCode,
+      contentLength: bodyBytes.length,
+      request: response.request,
+      headers: response.headers,
+      isRedirect: response.isRedirect,
+      persistentConnection: response.persistentConnection,
+      reasonPhrase: response.reasonPhrase,
+    );
+  }
+
+  Future<void> _abortMediaUpload(Uri url, String session) async {
+    try {
+      final response = await _inner.send(
+        _buildMediaRequest(
+          url: url,
+          op: 'abort',
+          session: session,
+          nonce: Uint8List(0),
+          payload: Uint8List(0),
+        ),
+      );
+      await response.stream.drain();
+    } catch (_) {
+      // Best-effort cleanup only; keep the original upload error.
+    }
   }
 
   List<Uint8List> _splitIntoChunks(Uint8List data) {
@@ -334,9 +488,15 @@ class TunnelHttpClient extends http.BaseClient {
     required Uint8List nonce,
   }) async {
     if (chunks.length == 1) {
-      return _sendSingleChunk(url, chunks.first, nonce, chunks.length);
+      return _validateTunnelResponse(
+        url,
+        await _sendSingleChunk(url, chunks.first, nonce, chunks.length),
+      );
     }
-    return _sendMultipleChunks(url, chunks, nonce);
+    return _validateTunnelResponse(
+      url,
+      await _sendMultipleChunks(url, chunks, nonce),
+    );
   }
 
   Future<http.StreamedResponse> _sendSingleChunk(
@@ -375,6 +535,51 @@ class TunnelHttpClient extends http.BaseClient {
     throw StateError('No chunks sent');
   }
 
+  Future<http.StreamedResponse> _validateTunnelResponse(
+    Uri url,
+    http.StreamedResponse response,
+  ) async {
+    final bodyBytes = await response.stream.toBytes();
+    if (response.statusCode == 202) {
+      throw http.ClientException(
+        'Tunnel ended with an intermediate HTTP 202 response',
+        url,
+      );
+    }
+    if (bodyBytes.isEmpty &&
+        response.statusCode >= 200 &&
+        response.statusCode < 300) {
+      throw http.ClientException(
+        'Tunnel returned empty HTTP ${response.statusCode} response; '
+        'request likely did not reach the QNSKK origin. '
+        'headers=${_debugHeaders(response.headers)}',
+        url,
+      );
+    }
+    return http.StreamedResponse(
+      Stream<List<int>>.value(bodyBytes),
+      response.statusCode,
+      contentLength: bodyBytes.length,
+      request: response.request,
+      headers: response.headers,
+      isRedirect: response.isRedirect,
+      persistentConnection: response.persistentConnection,
+      reasonPhrase: response.reasonPhrase,
+    );
+  }
+
+  String _debugHeaders(Map<String, String> headers) {
+    final safeHeaders = <String, String>{};
+    for (final entry in headers.entries) {
+      final name = entry.key.toLowerCase();
+      if (name == 'authorization' || name == 'cookie' || name == 'set-cookie') {
+        continue;
+      }
+      safeHeaders[name] = entry.value;
+    }
+    return safeHeaders.toString();
+  }
+
   http.Request _buildChunkRequest(
     Uri url,
     Uint8List chunk,
@@ -404,10 +609,15 @@ class TunnelHttpClient extends http.BaseClient {
     request.headers[headerClientPubkey] = base64UrlNoPad(_clientPublicKey);
     request.headers[headerMediaOp] = op;
     request.headers[headerMediaSession] = session;
-    request.headers[headerNonce] = base64UrlNoPad(nonce);
-    request.headers[headerMediaPayload] = base64UrlNoPad(payload);
+    if (nonce.isNotEmpty) request.headers[headerNonce] = base64UrlNoPad(nonce);
+    if (payload.isNotEmpty) {
+      request.headers[headerMediaPayload] = base64UrlNoPad(payload);
+    }
     if (index != null) request.headers[headerMediaIndex] = index.toString();
-    assert(request.headers[headerMediaPayload]!.length <= maxHeaderValueSize);
+    assert(
+      request.headers[headerMediaPayload] == null ||
+          request.headers[headerMediaPayload]!.length <= maxHeaderValueSize,
+    );
     return request;
   }
 
