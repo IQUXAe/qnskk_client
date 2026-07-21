@@ -10,6 +10,8 @@ import 'package:fluffychat/utils/custom_http_client.dart';
 import 'package:fluffychat/utils/custom_image_resizer.dart';
 import 'package:fluffychat/utils/init_with_restore.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/utils/tunnel_http_client.dart';
+import 'package:fluffychat/utils/tunnel_key_manager.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_vodozemac/flutter_vodozemac.dart' as vod;
@@ -113,9 +115,27 @@ abstract class ClientManager {
     final shareKeysWith = AppSettings.shareKeysWith.value;
     final enableSoftLogout = AppSettings.enableSoftLogout.value;
 
+    final innerClient = CustomHttpClient.createHTTPClient();
+    final keyManager = TunnelKeyManager.instance;
+
+    // Perform X25519 key exchange with the edge proxy.
+    // The server URI should point to the edge proxy (e.g. https://api.qnskk.top).
+    const serverUri = String.fromEnvironment(
+      'QNSKK_SERVER_URI',
+      defaultValue: 'https://api.qnskk.top',
+    );
+    final sharedSecret = await keyManager.getOrCreateSharedSecret(serverUri);
+    final clientPubkey = await keyManager.clientPublicKey;
+
+    final tunnelClient = TunnelHttpClient(
+      inner: innerClient,
+      encryptionKey: sharedSecret,
+      clientPublicKey: clientPubkey,
+    );
+
     return Client(
       clientName,
-      httpClient: CustomHttpClient.createHTTPClient(),
+      httpClient: tunnelClient,
       verificationMethods: {
         KeyVerificationMethod.numbers,
         if (kIsWeb || PlatformInfos.isMobile || PlatformInfos.isLinux)
