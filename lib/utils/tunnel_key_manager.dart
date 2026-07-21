@@ -42,12 +42,11 @@ class TunnelKeyManager {
   static const _skClientPublic = 'qnskk.tunnel.client_public_key';
   static const _skSharedSecret = 'qnskk.tunnel.shared_secret';
 
-  // Derived from edge-proxy.toml's development private key. Production builds
-  // must pass the deployment key via:
+  // Pinned QNSKK server public key. Production builds may override it via:
   // --dart-define=QNSKK_SERVER_PUBKEY=<base64url-no-pad-x25519-public-key>
   static const _pinnedServerPublicKeyB64 = String.fromEnvironment(
     'QNSKK_SERVER_PUBKEY',
-    defaultValue: 'U-JqauVwOoK2rh6DxBvFgFZTalL6diibcpkyMXC5PnQ',
+    defaultValue: 'PPV00bMPZLBoGkvbtt51eCa9pyUb6ZRltqKUvlz8fA0',
   );
 
   static final X25519 _x25519 = X25519();
