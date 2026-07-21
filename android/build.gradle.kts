@@ -16,6 +16,12 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+gradle.projectsEvaluated {
+    project(":qr_code_scanner_plus").configurations.all {
+        exclude(group = "androidx.drawerlayout", module = "drawerlayout")
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

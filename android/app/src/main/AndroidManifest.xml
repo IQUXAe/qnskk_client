@@ -34,7 +34,7 @@
         android:localeConfig="@xml/locale_config"
     >
         <activity
-            android:name=".MainActivity"
+            android:name="chat.fluffy.fluffychat.MainActivity"
             android:launchMode="singleTask"
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
@@ -111,7 +111,7 @@
             </intent-filter>
         </activity>
 
-        <service android:name=".FcmPushService"
+        <service android:name="chat.fluffy.fluffychat.FcmPushService"
           android:exported="false">
           <intent-filter>
             <action android:name="com.google.firebase.MESSAGING_EVENT"/>

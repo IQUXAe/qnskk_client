@@ -68,7 +68,7 @@ Future<void> connectToHomeserverFlow(
         GoRouter.of(context).routeInformationProvider.value.uri.pathSegments,
       );
       pathSegments.removeLast();
-      pathSegments.add('login');
+      pathSegments.add(signUp ? 'register' : 'login');
       context.go('/${pathSegments.join('/')}', extra: client);
       setState(AsyncSnapshot.withData(ConnectionState.done, true));
       return;
