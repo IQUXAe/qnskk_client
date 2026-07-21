@@ -8,6 +8,7 @@ import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/error_reporter.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/utils/qnskk_recovery_passphrase.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -27,6 +28,7 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
   final TextEditingController repeatPassphraseController =
       TextEditingController();
   final ScrollController devicesScrollController = ScrollController();
+  bool _autoRecoveryAttempted = false;
 
   BootstrapViewModel({required this.client, required this.reset})
     : super(BootstrapViewModelState()..reset = reset) {
@@ -173,6 +175,63 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
     notifyListeners();
   }
 
+  Future<void> tryAutoRecovery(BuildContext context) async {
+    if (_autoRecoveryAttempted || value.isLoading || value.reset) return;
+
+    final state = value.cryptoIdentityState;
+    final userId = client.userID?.toString();
+    if (state == null || state.connected || userId == null) return;
+
+    final passphrase = QnskkRecoveryPassphrase.take(userId);
+    if (passphrase == null) return;
+
+    _autoRecoveryAttempted = true;
+    value.isLoading = true;
+    notifyListeners();
+
+    try {
+      if (state.initialized) {
+        await client.restoreCryptoIdentity(passphrase);
+      } else {
+        value.recoveryKey = await client.initCryptoIdentity(
+          passphrase: passphrase,
+          wipeCrossSigning: true,
+          wipeKeyBackup: true,
+          wipeSecureStorage: true,
+          setupMasterKey: true,
+          setupSelfSigningKey: true,
+          setupUserSigningKey: true,
+        );
+      }
+      value.cryptoIdentityState = await client.getCryptoIdentityState();
+      value.isLoading = false;
+      notifyListeners();
+    } catch (e, s) {
+      value.isLoading = false;
+      value.unlockWithError = e;
+      notifyListeners();
+      if (context.mounted) {
+        ErrorReporter(
+          context,
+          'Unable to auto restore crypto identity',
+        ).onErrorCallback(e, s);
+      } else {
+        Logs().w('Unable to auto restore crypto identity', e, s);
+      }
+    }
+  }
+
+  bool get shouldHideManualRecoveryDuringAutoRecovery {
+    final state = value.cryptoIdentityState;
+    final userId = client.userID?.toString();
+    return !value.reset &&
+        !_autoRecoveryAttempted &&
+        state != null &&
+        !state.connected &&
+        userId != null &&
+        QnskkRecoveryPassphrase.has(userId);
+  }
+
   void _cancelKeyVerification() {
     final keyVerification = value.keyVerification;
     if (keyVerification != null &&
@@ -195,7 +254,7 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
     value.isLoading = true;
     notifyListeners();
     try {
-      await client.restoreCryptoIdentity(key);
+      await _restoreCryptoIdentity(key);
       value.isLoading = false;
       value.cryptoIdentityState = await client.getCryptoIdentityState();
       notifyListeners();
@@ -216,6 +275,22 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
         await FlutterSecureStorage().delete(key: _secureStorageKey);
       }
       return;
+    }
+  }
+
+  Future<void> _restoreCryptoIdentity(String keyOrPassword) async {
+    try {
+      await client.restoreCryptoIdentity(keyOrPassword);
+      return;
+    } on InvalidPassphraseException {
+      final userId = client.userID?.toString();
+      if (userId == null) rethrow;
+      final qnskkPassphrase = await QnskkRecoveryPassphrase.derive(
+        userId: userId,
+        password: keyOrPassword,
+      );
+      if (qnskkPassphrase == keyOrPassword) rethrow;
+      await client.restoreCryptoIdentity(qnskkPassphrase);
     }
   }
 

@@ -1,6 +1,7 @@
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/qnskk_homeserver.dart';
+import 'package:fluffychat/utils/qnskk_recovery_passphrase.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -67,6 +68,14 @@ class RegisterController extends State<Register> {
 
       if (!matrix.widget.clients.contains(widget.client)) {
         matrix.widget.clients.add(widget.client);
+      }
+
+      final userId = widget.client.userID?.toString();
+      if (userId != null) {
+        await QnskkRecoveryPassphrase.rememberPassword(
+          userId: userId,
+          password: password,
+        );
       }
 
       if (mounted) context.go('/backup');

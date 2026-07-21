@@ -27,13 +27,23 @@ class BootstrapPage extends StatelessWidget {
           BootstrapViewModel(client: Matrix.of(context).client, reset: reset),
       builder: (context, viewModel, _) {
         final cryptoIdentityState = viewModel.value.cryptoIdentityState;
+        final hideManualRecovery =
+            viewModel.shouldHideManualRecoveryDuringAutoRecovery;
+        final showLoading =
+            cryptoIdentityState == null ||
+            viewModel.value.isLoading ||
+            hideManualRecovery;
         if (cryptoIdentityState?.connected == true && !reset) {
           WidgetsBinding.instance.addPostFrameCallback(
             (_) => viewModel.goToRoomsPageAfterSuccess(context),
           );
+        } else if (cryptoIdentityState != null && !reset) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => viewModel.tryAutoRecovery(context),
+          );
         }
 
-        final title = cryptoIdentityState == null
+        final title = showLoading
             ? L10n.of(context).loadingPleaseWait
             : cryptoIdentityState.initialized && !viewModel.value.reset
             ? L10n.of(context).restoreCryptoIdentity
@@ -46,7 +56,10 @@ class BootstrapPage extends StatelessWidget {
         return LoginScaffold(
           appBar: AppBar(
             automaticallyImplyLeading: false,
-            leading: viewModel.value.recoveryKey != null
+            leading:
+                viewModel.value.recoveryKey != null ||
+                    hideManualRecovery ||
+                    viewModel.value.isLoading
                 ? null
                 : CloseButton(
                     onPressed: () async {
@@ -82,7 +95,7 @@ class BootstrapPage extends StatelessWidget {
             ],
           ),
 
-          body: cryptoIdentityState == null
+          body: showLoading
               ? Center(child: CircularProgressIndicator.adaptive())
               : !cryptoIdentityState.initialized || viewModel.value.reset
               ? viewModel.value.recoveryKey == null

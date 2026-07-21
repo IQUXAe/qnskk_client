@@ -7,6 +7,7 @@ import 'dart:async';
 
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/qnskk_homeserver.dart';
+import 'package:fluffychat/utils/qnskk_recovery_passphrase.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_text_input_dialog.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
@@ -87,6 +88,13 @@ class LoginController extends State<Login> {
         password: passwordController.text,
         initialDeviceDisplayName: PlatformInfos.appDisplayName,
       );
+      final userId = client.userID?.toString();
+      if (userId != null) {
+        await QnskkRecoveryPassphrase.rememberPassword(
+          userId: userId,
+          password: passwordController.text,
+        );
+      }
       if (mounted) {
         context.go('/backup');
       }
