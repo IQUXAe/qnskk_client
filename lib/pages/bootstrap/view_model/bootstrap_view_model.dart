@@ -30,6 +30,8 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
   final ScrollController devicesScrollController = ScrollController();
   bool _autoRecoveryAttempted = false;
 
+  bool _disposed = false;
+
   BootstrapViewModel({required this.client, required this.reset})
     : super(BootstrapViewModelState()..reset = reset) {
     _init();
@@ -37,12 +39,19 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
 
   @override
   void dispose() {
+    _disposed = true;
     _cancelKeyVerification();
     enterPassphraseOrRecovController.dispose();
     newPassphraseController.dispose();
     repeatPassphraseController.dispose();
     devicesScrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
   }
 
   void _checkCanCreatePassphrase([_]) {
