@@ -166,9 +166,24 @@ Future<void> _tryPushHelper(
   }
   Logs().v('Push helper got notification event of type ${event.type}.');
 
-  if (!client.pushruleEvaluator.match(event).notify) {
-    Logs().i('Push helper: filtered by client-side push rules.');
-    return;
+  final userId = client.userID;
+  if (userId == null) {
+    Logs().w(
+      'Push helper: client user ID is unavailable; skipping client-side push rules.',
+    );
+  } else {
+    try {
+      if (!client.pushruleEvaluator.match(event).notify) {
+        Logs().i('Push helper: filtered by client-side push rules.');
+        return;
+      }
+    } catch (e, s) {
+      Logs().w(
+        'Push helper: unable to evaluate client-side push rules; showing notification.',
+        e,
+        s,
+      );
+    }
   }
 
   if (event.type.startsWith('m.call')) {
@@ -196,16 +211,14 @@ Future<void> _tryPushHelper(
   final matrixLocals = MatrixLocals(l10n);
 
   // Calculate the body
-  final body = event.type == EventTypes.Encrypted
-      ? l10n.newMessageInFluffyChat
-      : await event.calcLocalizedBody(
-          matrixLocals,
-          plaintextBody: true,
-          withSenderNamePrefix: false,
-          hideReply: true,
-          hideEdit: true,
-          removeMarkdown: true,
-        );
+  final body = await event.calcLocalizedBody(
+    matrixLocals,
+    plaintextBody: true,
+    withSenderNamePrefix: false,
+    hideReply: true,
+    hideEdit: true,
+    removeMarkdown: true,
+  );
 
   // The person object for the android message style notification
   final avatar = event.room.avatar;
@@ -213,11 +226,14 @@ Future<void> _tryPushHelper(
       ? avatar
       : event.senderFromMemoryOrFallback.avatarUrl;
 
-  final ownUser = event.room.unsafeGetUserFromMemoryOrFallback(client.userID!);
+  final ownAvatar = userId == null
+      ? null
+      : event.room.unsafeGetUserFromMemoryOrFallback(userId).avatarUrl;
+  final ownDisplayName = userId == null
+      ? AppSettings.applicationName.value
+      : event.room.unsafeGetUserFromMemoryOrFallback(userId).calcDisplayname();
 
-  final userAvatarFile = await client.tryDownloadNotificationAvatar(
-    ownUser.avatarUrl,
-  );
+  final userAvatarFile = await client.tryDownloadNotificationAvatar(ownAvatar);
   final roomAvatarFile = await client.tryDownloadNotificationAvatar(avatar);
   final senderAvatarFile = await client.tryDownloadNotificationAvatar(
     senderAvatar,
@@ -285,7 +301,7 @@ Future<void> _tryPushHelper(
         messagingStyleInformation ??
         MessagingStyleInformation(
           Person(
-            name: ownUser.calcDisplayname(),
+            name: ownDisplayName,
             icon: userAvatarFile == null
                 ? null
                 : ByteArrayAndroidIcon(userAvatarFile),

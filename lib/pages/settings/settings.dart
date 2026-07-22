@@ -70,12 +70,22 @@ class SettingsController extends State<Settings> {
   Future<void> logoutAction() async {
     final l10n = L10n.of(context);
     final matrix = Matrix.of(context);
+    if (cryptoIdentityConnected != true) {
+      await showOkCancelAlertDialog(
+        useRootNavigator: false,
+        context: context,
+        title: l10n.chatBackup,
+        message: l10n.noBackupWarning,
+        okLabel: l10n.ok,
+      );
+      return;
+    }
     final consent = await showOkCancelAlertDialog(
       useRootNavigator: false,
       context: context,
       title: l10n.areYouSureYouWantToLogout,
-      message: l10n.noBackupWarning,
-      isDestructive: cryptoIdentityConnected == false,
+      message: l10n.removeDevicesDescription,
+      isDestructive: false,
       okLabel: l10n.logout,
       cancelLabel: l10n.cancel,
     );
@@ -197,7 +207,7 @@ class SettingsController extends State<Settings> {
         context: context,
         title: L10n.of(context).chatBackup,
         message: L10n.of(context).onlineKeyBackupEnabled,
-        okLabel: L10n.of(context).resetRecoveryKey,
+        okLabel: L10n.of(context).resetCryptoIdentity,
         cancelLabel: L10n.of(context).close,
         isDestructive: true,
       );

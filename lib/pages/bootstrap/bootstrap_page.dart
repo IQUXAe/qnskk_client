@@ -7,8 +7,6 @@ import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/bootstrap/view_model/bootstrap_view_model.dart';
 import 'package:fluffychat/pages/bootstrap/widgets/new_passphrase_view.dart';
 import 'package:fluffychat/pages/bootstrap/widgets/restore_bootstrap_view.dart';
-import 'package:fluffychat/pages/bootstrap/widgets/store_recovery_key_view.dart';
-import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/layouts/login_scaffold.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/view_model_builder.dart';
@@ -21,18 +19,13 @@ class BootstrapPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return ViewModelBuilder(
       create: () =>
           BootstrapViewModel(client: Matrix.of(context).client, reset: reset),
       builder: (context, viewModel, _) {
         final cryptoIdentityState = viewModel.value.cryptoIdentityState;
-        final hideManualRecovery =
-            viewModel.shouldHideManualRecoveryDuringAutoRecovery;
         final showLoading =
-            cryptoIdentityState == null ||
-            viewModel.value.isLoading ||
-            hideManualRecovery;
+            cryptoIdentityState == null || viewModel.value.isLoading;
         if (cryptoIdentityState?.connected == true && !reset) {
           WidgetsBinding.instance.addPostFrameCallback(
             (_) => viewModel.goToRoomsPageAfterSuccess(context),
@@ -45,62 +38,25 @@ class BootstrapPage extends StatelessWidget {
 
         final title = showLoading
             ? L10n.of(context).loadingPleaseWait
-            : cryptoIdentityState.initialized && !viewModel.value.reset
-            ? L10n.of(context).restoreCryptoIdentity
             : viewModel.value.reset
-            ? viewModel.value.recoveryKey != null
-                  ? L10n.of(context).youAreReadyToStart
-                  : L10n.of(context).resetCryptoIdentity
+            ? L10n.of(context).resetCryptoIdentity
+            : cryptoIdentityState.initialized
+            ? L10n.of(context).restoreCryptoIdentity
             : L10n.of(context).setUpCryptoIdentity;
 
         return LoginScaffold(
           appBar: AppBar(
             automaticallyImplyLeading: false,
-            leading:
-                viewModel.value.recoveryKey != null ||
-                    hideManualRecovery ||
-                    viewModel.value.isLoading
-                ? null
-                : CloseButton(
-                    onPressed: () async {
-                      if (!reset) {
-                        final consent = await showOkCancelAlertDialog(
-                          context: context,
-                          title: L10n.of(context).skipChatBackup,
-                          message: L10n.of(context).skipChatBackupWarning,
-                          okLabel: L10n.of(context).skip,
-                          isDestructive: true,
-                        );
-                        if (consent != OkCancelResult.ok) return;
-                        if (!context.mounted) return;
-                      }
-                      context.go('/rooms');
-                    },
-                  ),
+            leading: reset
+                ? CloseButton(onPressed: () => context.go('/rooms'))
+                : null,
             title: Text(title),
-            actions: [
-              if (viewModel.value.recoveryKey != null)
-                Padding(
-                  padding: EdgeInsets.all(8),
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: theme.colorScheme.primary,
-                      foregroundColor: theme.colorScheme.onPrimary,
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                    ),
-                    onPressed: () => context.go('/rooms'),
-                    child: Text(L10n.of(context).continueText),
-                  ),
-                ),
-            ],
           ),
 
           body: showLoading
               ? Center(child: CircularProgressIndicator.adaptive())
-              : !cryptoIdentityState.initialized || viewModel.value.reset
-              ? viewModel.value.recoveryKey == null
-                    ? NewPassphraseView(viewModel)
-                    : StoreRecoveryKeyView(viewModel)
+              : (!cryptoIdentityState.initialized || viewModel.value.reset)
+              ? NewPassphraseView(viewModel)
               : RestoreBootstrapView(viewModel),
         );
       },

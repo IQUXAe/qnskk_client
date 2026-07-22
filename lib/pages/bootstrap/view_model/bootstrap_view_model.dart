@@ -3,14 +3,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import 'package:file_picker/file_picker.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/error_reporter.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/qnskk_recovery_passphrase.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:matrix/encryption.dart';
@@ -22,12 +20,11 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
   final Client client;
   final bool reset;
 
-  final TextEditingController enterPassphraseOrRecovController =
+  final TextEditingController enterPassphraseController =
       TextEditingController();
   final TextEditingController newPassphraseController = TextEditingController();
   final TextEditingController repeatPassphraseController =
       TextEditingController();
-  final ScrollController devicesScrollController = ScrollController();
   bool _autoRecoveryAttempted = false;
 
   bool _disposed = false;
@@ -40,11 +37,9 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
   @override
   void dispose() {
     _disposed = true;
-    _cancelKeyVerification();
-    enterPassphraseOrRecovController.dispose();
+    enterPassphraseController.dispose();
     newPassphraseController.dispose();
     repeatPassphraseController.dispose();
-    devicesScrollController.dispose();
     super.dispose();
   }
 
@@ -69,48 +64,22 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
     notifyListeners();
   }
 
-  Future<void> retryKeyVerification() async {
-    value.noSecretsreceived = false;
-    value.keyVerification = await client.userDeviceKeys[client.userID!]!
-        .startVerification();
-    value.keyVerification?.onUpdate = _onKeyVerificationUpdate;
-    notifyListeners();
-  }
-
   Future<void> _init() async {
     final state = value.cryptoIdentityState = await client
         .getCryptoIdentityState();
     newPassphraseController.addListener(_checkCanCreatePassphrase);
     repeatPassphraseController.addListener(_checkCanCreatePassphrase);
-    enterPassphraseOrRecovController.addListener(
-      _passphraseOrRecoveryKeyEntered,
-    );
+    enterPassphraseController.addListener(_passphraseEntered);
     if (state.initialized) {
       if (state.connected) return notifyListeners();
 
-      await client.updateUserDeviceKeys();
-
-      final devices = value.connectedDevices =
-          client.userDeviceKeys[client.userID!]?.deviceKeys.values
-              .where(
-                (device) => device.hasValidSignatureChain(
-                  verifiedByTheirMasterKey: true,
-                ),
-              )
-              .toList() ??
-          [];
-      if (devices.isNotEmpty) {
-        value.keyVerification = await client.userDeviceKeys[client.userID!]!
-            .startVerification();
-        value.keyVerification?.onUpdate = _onKeyVerificationUpdate;
-      }
       if (supportsSecureStorage) {
         try {
           final keyFromSecureStorage = await FlutterSecureStorage().read(
             key: _secureStorageKey,
           );
           if (keyFromSecureStorage != null) {
-            enterPassphraseOrRecovController.text = keyFromSecureStorage;
+            enterPassphraseController.text = keyFromSecureStorage;
           }
         } catch (e, s) {
           Logs().e('Unable to read key from secure storage', e, s);
@@ -120,49 +89,22 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
     notifyListeners();
   }
 
-  void _passphraseOrRecoveryKeyEntered() {
-    final passphraseOrRecoveryKeyEntered =
-        enterPassphraseOrRecovController.text.isNotEmpty;
-    if (value.passphraseOrRecoveryKeyEntered !=
-        passphraseOrRecoveryKeyEntered) {
-      value.passphraseOrRecoveryKeyEntered = passphraseOrRecoveryKeyEntered;
+  void _passphraseEntered() {
+    final passphraseEntered = enterPassphraseController.text.isNotEmpty;
+    if (value.passphraseEntered != passphraseEntered) {
+      value.passphraseEntered = passphraseEntered;
       notifyListeners();
     }
   }
 
-  Future<void> _onKeyVerificationUpdate() async {
-    if (value.keyVerification?.state == KeyVerificationState.done) {
-      value.waitingForSecrets = true;
-      value.noSecretsreceived = false;
-      notifyListeners();
-      value.cryptoIdentityState = await client.getCryptoIdentityState();
-      var tries = 0;
-      const max = 10;
-      while (value.cryptoIdentityState?.connected != true) {
-        Logs().d('Waiting for secrets... [$tries/$max]');
-        if (tries >= max) return;
-        await Future.delayed(const Duration(seconds: 1));
-        value.cryptoIdentityState = await client.getCryptoIdentityState();
-        tries++;
-      }
-
-      if (value.cryptoIdentityState?.connected != true) {
-        value.waitingForSecrets = false;
-        value.noSecretsreceived = true;
-      }
-    }
-    notifyListeners();
-  }
-
-  Future<void> setOrSkipPassphrase(
-    String? passphrase,
-    BuildContext context,
-  ) async {
+  Future<void> setPassphrase(String passphrase, BuildContext context) async {
+    if (passphrase.isEmpty) return;
     value.isLoading = true;
     notifyListeners();
     try {
-      value.recoveryKey = await client.initCryptoIdentity(
-        passphrase: passphrase,
+      final qnskkPassphrase = await _deriveQnskkPassphrase(passphrase);
+      await client.initCryptoIdentity(
+        passphrase: qnskkPassphrase,
         wipeCrossSigning: !reset,
         wipeKeyBackup: !reset,
         wipeSecureStorage: !reset,
@@ -170,6 +112,19 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
         setupSelfSigningKey: !reset,
         setupUserSigningKey: !reset,
       );
+      value.cryptoIdentityState = await client.getCryptoIdentityState();
+      value.isLoading = false;
+      if (supportsSecureStorage &&
+          value.cryptoIdentityState?.connected == true) {
+        await FlutterSecureStorage().write(
+          key: _secureStorageKey,
+          value: passphrase,
+        );
+      }
+      if (context.mounted) {
+        context.go('/rooms');
+        return;
+      }
     } catch (e, s) {
       if (!context.mounted) return;
       ErrorReporter(
@@ -203,7 +158,7 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
         try {
           await client.restoreCryptoIdentity(passphrase);
         } on InvalidPassphraseException catch (_) {
-          value.recoveryKey = await client.initCryptoIdentity(
+          await client.initCryptoIdentity(
             passphrase: passphrase,
             wipeCrossSigning: true,
             wipeKeyBackup: true,
@@ -214,7 +169,7 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
           );
         }
       } else {
-        value.recoveryKey = await client.initCryptoIdentity(
+        await client.initCryptoIdentity(
           passphrase: passphrase,
           wipeCrossSigning: true,
           wipeKeyBackup: true,
@@ -242,42 +197,27 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
     }
   }
 
-  bool get shouldHideManualRecoveryDuringAutoRecovery {
-    final state = value.cryptoIdentityState;
-    final userId = client.userID?.toString();
-    return !value.reset &&
-        !_autoRecoveryAttempted &&
-        state != null &&
-        !state.connected &&
-        userId != null &&
-        QnskkRecoveryPassphrase.has(userId);
-  }
-
-  void _cancelKeyVerification() {
-    final keyVerification = value.keyVerification;
-    if (keyVerification != null &&
-        keyVerification.state != KeyVerificationState.done &&
-        keyVerification.state != KeyVerificationState.error) {
-      keyVerification.cancel();
-    }
-  }
-
   bool get supportsSecureStorage =>
       PlatformInfos.isMobile || PlatformInfos.isDesktop;
 
   Future<void> unlock(BuildContext context) async {
-    final key = enterPassphraseOrRecovController.text.trim();
-    if (key.isEmpty) return;
-
-    _cancelKeyVerification();
+    final password = enterPassphraseController.text;
+    if (password.isEmpty) return;
 
     value.unlockWithError = null;
     value.isLoading = true;
     notifyListeners();
     try {
-      await _restoreCryptoIdentity(key);
+      await _restoreCryptoIdentity(password);
       value.isLoading = false;
       value.cryptoIdentityState = await client.getCryptoIdentityState();
+      if (supportsSecureStorage &&
+          value.cryptoIdentityState?.connected == true) {
+        await FlutterSecureStorage().write(
+          key: _secureStorageKey,
+          value: password,
+        );
+      }
       notifyListeners();
       return;
     } catch (e, s) {
@@ -299,20 +239,19 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
     }
   }
 
-  Future<void> _restoreCryptoIdentity(String keyOrPassword) async {
-    try {
-      await client.restoreCryptoIdentity(keyOrPassword);
-      return;
-    } on InvalidPassphraseException {
-      final userId = client.userID?.toString();
-      if (userId == null) rethrow;
-      final qnskkPassphrase = await QnskkRecoveryPassphrase.derive(
-        userId: userId,
-        password: keyOrPassword,
+  Future<void> _restoreCryptoIdentity(String password) async {
+    final qnskkPassphrase = await _deriveQnskkPassphrase(password);
+    await client.restoreCryptoIdentity(qnskkPassphrase);
+  }
+
+  Future<String> _deriveQnskkPassphrase(String password) async {
+    final userId = client.userID?.toString();
+    if (userId == null) {
+      throw StateError(
+        'Cannot derive QNSKK recovery passphrase without user ID',
       );
-      if (qnskkPassphrase == keyOrPassword) rethrow;
-      await client.restoreCryptoIdentity(qnskkPassphrase);
     }
+    return QnskkRecoveryPassphrase.derive(userId: userId, password: password);
   }
 
   void goToRoomsPageAfterSuccess(BuildContext context) {
@@ -358,52 +297,4 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
   }
 
   String get _secureStorageKey => 'ssss_recovery_key_${client.userID}';
-
-  Future<void> openRecoveryKeyFile(BuildContext context) async {
-    final result = await FilePicker.pickFile(
-      allowedExtensions: ['txt'],
-      type: FileType.custom,
-    );
-    final file = result?.xFile;
-    if (file == null) return;
-    try {
-      final key = await file.readAsString();
-      enterPassphraseOrRecovController.text = key;
-    } catch (e, s) {
-      Logs().d('Unable to read recovery key file', e, s);
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(e.toLocalizedString(context))));
-      }
-    }
-    if (context.mounted) await unlock(context);
-  }
-
-  Future<void> toggleRecoveryKeyDownloaded(
-    bool? downloaded,
-    BuildContext context,
-  ) async {
-    final path = await FilePicker.saveFile(
-      fileName:
-          'FluffyChat-Recovery-Key-${DateTime.now().toIso8601String()}.txt',
-      bytes: Uint8List.fromList(value.recoveryKey!.codeUnits),
-    );
-    if (path == null) return;
-    value.recoveryKeyDownloaded = downloaded == true;
-    notifyListeners();
-  }
-
-  Future<void> toggleRecoveryKeyStoredInSecureStorage(bool? stored) async {
-    if (stored == true) {
-      await FlutterSecureStorage().write(
-        key: _secureStorageKey,
-        value: value.recoveryKey,
-      );
-    } else {
-      await FlutterSecureStorage().delete(key: _secureStorageKey);
-    }
-    value.recoveryKeyStoredInSecureStorage = stored == true;
-    notifyListeners();
-  }
 }

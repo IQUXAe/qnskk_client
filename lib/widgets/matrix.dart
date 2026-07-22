@@ -164,6 +164,7 @@ class MatrixState extends State<Matrix> {
                 );
                 _registerSubs(_loginClientCandidate!.clientName);
                 setActiveClient(_loginClientCandidate);
+                backgroundPush?.setupPush();
                 _loginClientCandidate = null;
                 FluffyChatApp.router.go('/backup');
               });
@@ -177,6 +178,7 @@ class MatrixState extends State<Matrix> {
   final onRoomKeyRequestSub = <String, StreamSubscription>{};
   final onKeyVerificationRequestSub = <String, StreamSubscription>{};
   final onNotification = <String, StreamSubscription>{};
+  final onLoginSub = <String, StreamSubscription<LoginState>>{};
   final onLogoutSub = <String, StreamSubscription<LoginState>>{};
   final onUiaRequest = <String, StreamSubscription<UiaRequest>>{};
 
@@ -280,6 +282,11 @@ class MatrixState extends State<Matrix> {
           }
           FluffyChatApp.router.go('/');
         });
+    onLoginSub[name] ??= c.onLoginStateChanged.stream
+        .where((state) => state == LoginState.loggedIn)
+        .listen((_) {
+          backgroundPush?.setupPush();
+        });
     onUiaRequest[name] ??= c.onUiaRequest.stream.listen(uiaRequestHandler);
     if (PlatformInfos.isWeb || PlatformInfos.isLinux) {
       FlutterLocalNotificationsPlugin().initialize(
@@ -311,6 +318,8 @@ class MatrixState extends State<Matrix> {
     onKeyVerificationRequestSub.remove(name);
     onLogoutSub[name]?.cancel();
     onLogoutSub.remove(name);
+    onLoginSub[name]?.cancel();
+    onLoginSub.remove(name);
     onNotification[name]?.cancel();
     onNotification.remove(name);
   }
@@ -348,6 +357,10 @@ class MatrixState extends State<Matrix> {
           }
         },
       );
+      // Ensure push registration is attempted for already-logged-in clients.
+      // This is idempotent and will no-op until token/client state is ready.
+      // ignore: discarded_futures
+      backgroundPush?.setupPush();
     }
 
     createVoipPlugin();

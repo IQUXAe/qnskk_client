@@ -85,7 +85,7 @@ class SettingsView extends StatelessWidget {
                     ),
                     Expanded(
                       child: Column(
-                        mainAxisAlignment: .center,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: .start,
                         children: [
                           TextButton.icon(
@@ -144,12 +144,20 @@ class SettingsView extends StatelessWidget {
               },
             ),
             Divider(color: theme.dividerColor),
-            SwitchListTile.adaptive(
-              controlAffinity: ListTileControlAffinity.trailing,
-              value: controller.cryptoIdentityConnected == true,
-              secondary: const Icon(Icons.backup_outlined),
+            ListTile(
+              leading: Icon(
+                controller.cryptoIdentityConnected == true
+                    ? Icons.backup_outlined
+                    : Icons.cloud_off_outlined,
+              ),
               title: Text(L10n.of(context).chatBackup),
-              onChanged: controller.firstRunBootstrapAction,
+              subtitle: Text(
+                controller.cryptoIdentityConnected == true
+                    ? L10n.of(context).onlineKeyBackupEnabled
+                    : L10n.of(context).noBackupWarning,
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: controller.firstRunBootstrapAction,
             ),
             Divider(color: theme.dividerColor),
             ListTile(

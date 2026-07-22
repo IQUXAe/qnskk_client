@@ -15,11 +15,13 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/main.dart';
+import 'package:fluffychat/utils/client_manager.dart';
 import 'package:fluffychat/utils/notification_background_handler.dart';
 import 'package:fluffychat/utils/push_helper.dart';
 import 'package:fluffychat/widgets/fluffy_chat_app.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_vodozemac/flutter_vodozemac.dart' as vod;
 import 'package:http/http.dart' as http;
 import 'package:matrix/matrix.dart';
 import 'package:unifiedpush/unifiedpush.dart';
@@ -29,6 +31,68 @@ import '../config/app_config.dart';
 import '../config/setting_keys.dart';
 import '../widgets/matrix.dart';
 import 'platform_infos.dart';
+
+bool _firebaseBackgroundHandlerRegistered = false;
+bool _backgroundVodInitialized = false;
+
+void registerFirebaseBackgroundPushHandler() {
+  if (_firebaseBackgroundHandlerRegistered || !PlatformInfos.isMobile) {
+    return;
+  }
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  _firebaseBackgroundHandlerRegistered = true;
+}
+
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  try {
+    WidgetsFlutterBinding.ensureInitialized();
+    await Firebase.initializeApp();
+    if (!_backgroundVodInitialized) {
+      await vod.init(wasmPath: './assets/assets/vodozemac/');
+      _backgroundVodInitialized = true;
+    }
+    final store = await AppSettings.init(loadWebConfigFile: false);
+    final clients = await ClientManager.getClients(
+      initialize: true,
+      store: store,
+    );
+    final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+    await flutterLocalNotificationsPlugin.initialize(
+      settings: const InitializationSettings(
+        android: AndroidInitializationSettings('notifications_icon'),
+        iOS: DarwinInitializationSettings(),
+      ),
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
+    );
+    await pushHelper(
+      PushNotification.fromJson(_matrixPushDataFromRemoteMessage(message)),
+      clients: clients,
+      flutterLocalNotificationsPlugin: flutterLocalNotificationsPlugin,
+    );
+  } catch (e, s) {
+    Logs().e('[FCM] Background push handler failed', e, s);
+  }
+}
+
+Map<String, Object?> _matrixPushDataFromRemoteMessage(RemoteMessage message) {
+  final data = Map<String, Object?>.from(message.data);
+  final notification = data['notification'];
+  if (notification is String && notification.isNotEmpty) {
+    try {
+      final decoded = jsonDecode(notification);
+      if (decoded is Map) {
+        return Map<String, Object?>.from(decoded);
+      }
+    } catch (_) {
+      return data;
+    }
+  }
+  if (notification is Map) {
+    return Map<String, Object?>.from(notification);
+  }
+  return data;
+}
 
 class BackgroundPush {
   static BackgroundPush? _instance;
@@ -116,14 +180,28 @@ class BackgroundPush {
           firebaseEnabled = true;
           FirebaseMessaging.onMessage.listen((RemoteMessage message) {
             pushHelper(
-              PushNotification.fromJson(message.data),
+              PushNotification.fromJson(
+                _matrixPushDataFromRemoteMessage(message),
+              ),
               clients: clients,
               l10n: l10n,
               activeRoomId: matrix?.activeRoomId,
               flutterLocalNotificationsPlugin: _flutterLocalNotificationsPlugin,
             );
           });
-          _fcmToken = await FirebaseMessaging.instance.getToken();
+          FirebaseMessaging.instance.onTokenRefresh.listen((token) async {
+            _fcmToken = token;
+            for (final client in clients) {
+              if (client.onLoginStateChanged.value == LoginState.loggedIn) {
+                await setupPusher(
+                  client: client,
+                  gatewayUrl: AppSettings.pushNotificationsGatewayUrl.value,
+                  token: token,
+                );
+              }
+            }
+          });
+          _fcmToken = await _getFcmTokenWithRetry();
           if (_fcmToken != null) {
             Logs().i('[FCM] Token obtained: $_fcmToken');
           }
@@ -164,6 +242,26 @@ class BackgroundPush {
     return instance;
   }
 
+  Future<String?> _getFcmTokenWithRetry({
+    int attempts = 3,
+    Duration delay = const Duration(seconds: 2),
+  }) async {
+    for (var i = 0; i < attempts; i++) {
+      try {
+        final token = await FirebaseMessaging.instance.getToken();
+        if (token != null && token.isNotEmpty) {
+          return token;
+        }
+      } catch (e, s) {
+        Logs().w('[FCM] getToken attempt ${i + 1} failed', e, s);
+      }
+      if (i < attempts - 1) {
+        await Future.delayed(delay);
+      }
+    }
+    return null;
+  }
+
   /// Makes sure that there is exactly ONE pusher with these settings for this
   /// client and deletes all other pushers if not.
   Future<void> setupPusher({
@@ -176,7 +274,7 @@ class BackgroundPush {
       //<GOOGLE_SERVICES>await firebase.requestPermission();
     }
     if (PlatformInfos.isAndroid && !isIntegrationTest) {
-      _flutterLocalNotificationsPlugin
+      await _flutterLocalNotificationsPlugin
           .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin
           >()
@@ -207,6 +305,8 @@ class BackgroundPush {
       Logs().w('[Push] Missing required push credentials');
       return;
     }
+    final pusherFormat = AppSettings.pushNotificationsPusherFormat.value;
+    final normalizedPusherFormat = pusherFormat.isEmpty ? null : pusherFormat;
 
     if (pushers.any(
       (currentPusher) =>
@@ -219,8 +319,7 @@ class BackgroundPush {
           currentPusher.deviceDisplayName == client.deviceName &&
           currentPusher.lang == 'en' &&
           currentPusher.data.url.toString() == gatewayUrl &&
-          currentPusher.data.format ==
-              AppSettings.pushNotificationsPusherFormat.value &&
+          currentPusher.data.format == normalizedPusherFormat &&
           currentPusher.data.additionalProperties['data_message'] ==
               pusherDataMessageFormat,
     )) {
@@ -254,7 +353,7 @@ class BackgroundPush {
           lang: 'en',
           data: PusherData(
             url: Uri.parse(gatewayUrl),
-            format: AppSettings.pushNotificationsPusherFormat.value,
+            format: normalizedPusherFormat,
             additionalProperties: {
               'client_name': client.clientName,
               'data_message': pusherDataMessageFormat,
@@ -296,7 +395,7 @@ class BackgroundPush {
         if (client.onLoginStateChanged.value != LoginState.loggedIn ||
             !PlatformInfos.isMobile ||
             matrix == null) {
-          return;
+          continue;
         }
         // Do not setup unifiedpush if this has been initialized by
         // an unifiedpush action
@@ -360,7 +459,7 @@ class BackgroundPush {
           Logs().i('[FCM] Token obtained for client: $_fcmToken');
           await setupPusher(
             client: client,
-            gatewayUrl: 'https://api.qnskk.top/_matrix/push/v1/notify',
+            gatewayUrl: AppSettings.pushNotificationsGatewayUrl.value,
             token: _fcmToken,
           );
           return;

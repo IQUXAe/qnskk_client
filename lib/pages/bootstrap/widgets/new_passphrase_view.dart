@@ -14,7 +14,6 @@ class NewPassphraseView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final canCreatePassphrase =
         viewModel.value.newPassphraseEqualsRepeatPassphrase &&
         viewModel.value.newPassphraseNumbers &&
@@ -25,7 +24,10 @@ class NewPassphraseView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16.0),
       children: [
-        Text(L10n.of(context).newPassphraseDescription, textAlign: .center),
+        Text(
+          L10n.of(context).newPassphraseDescription,
+          textAlign: TextAlign.center,
+        ),
         const SizedBox(height: 16),
         TextField(
           obscureText: viewModel.value.obscureText,
@@ -55,7 +57,7 @@ class NewPassphraseView extends StatelessWidget {
         const SizedBox(height: 16),
         ElevatedButton(
           onPressed: canCreatePassphrase && !viewModel.value.isLoading
-              ? () => viewModel.setOrSkipPassphrase(
+              ? () => viewModel.setPassphrase(
                   viewModel.newPassphraseController.text,
                   context,
                 )
@@ -63,14 +65,6 @@ class NewPassphraseView extends StatelessWidget {
           child: viewModel.value.isLoading
               ? CircularProgressIndicator.adaptive()
               : Text(L10n.of(context).continueText),
-        ),
-        const SizedBox(height: 16),
-        TextButton(
-          onPressed: viewModel.value.isLoading
-              ? null
-              : () => viewModel.setOrSkipPassphrase(null, context),
-          style: TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
-          child: Text(L10n.of(context).skip),
         ),
         const SizedBox(height: 16),
         _PassphraseCheckListTile(
@@ -122,7 +116,7 @@ class _PassphraseCheckListTile extends StatelessWidget {
               : theme.colorScheme.error,
           size: 20,
         ),
-        Text(label, style: TextStyle(fontSize: 12)),
+        Text(label, style: const TextStyle(fontSize: 12)),
       ],
     );
   }

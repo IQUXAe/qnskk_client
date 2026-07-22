@@ -28,12 +28,9 @@ enum AppSettings<T> {
   unifiedPushEndpoint<String>('chat.fluffy.unifiedpush.endpoint', ''),
   pushNotificationsGatewayUrl<String>(
     'pushNotificationsGatewayUrl',
-    'https://push.fluffychat.im/_matrix/push/v1/notify',
+    'https://api.qnskk.top/_matrix/push/v1/notify',
   ),
-  pushNotificationsPusherFormat<String>(
-    'pushNotificationsPusherFormat',
-    'event_id_only',
-  ),
+  pushNotificationsPusherFormat<String>('pushNotificationsPusherFormat', ''),
   renderHtml<bool>('chat.fluffy.renderHtml', true),
   fontSizeFactor<double>('chat.fluffy.font_size_factor', 1.0),
   hideRedactedEvents<bool>('chat.fluffy.hideRedactedEvents', false),
@@ -167,6 +164,26 @@ enum AppSettings<T> {
     final presetHomeserver = store.getString(AppSettings.presetHomeserver.key);
     if (presetHomeserver != qnskkHomeserver) {
       await store.setString(AppSettings.presetHomeserver.key, qnskkHomeserver);
+    }
+
+    const qnskkPushGateway = 'https://api.qnskk.top/_matrix/push/v1/notify';
+    final pushGateway = store.getString(
+      AppSettings.pushNotificationsGatewayUrl.key,
+    );
+    if (pushGateway == null ||
+        pushGateway.isEmpty ||
+        pushGateway == 'https://push.fluffychat.im/_matrix/push/v1/notify') {
+      await store.setString(
+        AppSettings.pushNotificationsGatewayUrl.key,
+        qnskkPushGateway,
+      );
+    }
+
+    final pusherFormat = store.getString(
+      AppSettings.pushNotificationsPusherFormat.key,
+    );
+    if (pusherFormat == null || pusherFormat == 'event_id_only') {
+      await store.setString(AppSettings.pushNotificationsPusherFormat.key, '');
     }
 
     final sendTimelineEventTimeout = store.getInt(
