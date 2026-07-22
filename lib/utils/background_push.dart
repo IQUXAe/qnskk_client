@@ -11,7 +11,8 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui';
 
-//<GOOGLE_SERVICES>import 'package:fcm_shared_isolate/fcm_shared_isolate.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/main.dart';
 import 'package:fluffychat/utils/notification_background_handler.dart';
@@ -108,17 +109,29 @@ class BackgroundPush {
         onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
       );
       Logs().v('Flutter Local Notifications initialized');
-      //<GOOGLE_SERVICES>firebase.setListeners(
-      //<GOOGLE_SERVICES>  onMessage: (message) => pushHelper(
-      //<GOOGLE_SERVICES>    PushNotification.fromJson(
-      //<GOOGLE_SERVICES>       message.tryGetMap<String, Object>('data') ?? message,
-      //<GOOGLE_SERVICES>    ),
-      //<GOOGLE_SERVICES>    clients: clients,
-      //<GOOGLE_SERVICES>    l10n: l10n,
-      //<GOOGLE_SERVICES>    activeRoomId: matrix?.activeRoomId,
-      //<GOOGLE_SERVICES>    flutterLocalNotificationsPlugin: _flutterLocalNotificationsPlugin,
-      //<GOOGLE_SERVICES>  ),
-      //<GOOGLE_SERVICES>);
+
+      if (PlatformInfos.isAndroid || PlatformInfos.isIOS) {
+        try {
+          await Firebase.initializeApp();
+          firebaseEnabled = true;
+          FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+            pushHelper(
+              PushNotification.fromJson(message.data),
+              clients: clients,
+              l10n: l10n,
+              activeRoomId: matrix?.activeRoomId,
+              flutterLocalNotificationsPlugin: _flutterLocalNotificationsPlugin,
+            );
+          });
+          _fcmToken = await FirebaseMessaging.instance.getToken();
+          if (_fcmToken != null) {
+            Logs().i('[FCM] Token obtained: $_fcmToken');
+          }
+        } catch (e, s) {
+          Logs().w('Firebase initialization warning', e, s);
+        }
+      }
+
       if (Platform.isAndroid) {
         await UnifiedPush.initialize(
           onNewEndpoint: _newUpEndpoint,
@@ -338,38 +351,25 @@ class BackgroundPush {
 
   Future<void> setupFirebase(Client client) async {
     Logs().v('Setup firebase');
-    if (!firebaseEnabled) {
-      await _noFcmWarning();
-      return;
-    }
-    if (_fcmToken?.isEmpty ?? true) {
-      if (PlatformInfos.isIOS) {
-        //<GOOGLE_SERVICES>await firebase.requestPermission();
-      }
-      const max = 5;
-      for (var i = 0; i < max; i++) {
-        try {
-          await Future.delayed(const Duration(seconds: 1));
-          //<GOOGLE_SERVICES>_fcmToken = await firebase.getToken();
-          if (_fcmToken != null) break;
-        } catch (e, s) {
-          Logs().w(
-            '[Push] cannot get token - try ($i/$max)',
-            e,
-            e is String ? null : s,
+    if (PlatformInfos.isAndroid || PlatformInfos.isIOS) {
+      try {
+        await Firebase.initializeApp();
+        await FirebaseMessaging.instance.requestPermission();
+        _fcmToken = await FirebaseMessaging.instance.getToken();
+        if (_fcmToken != null && _fcmToken!.isNotEmpty) {
+          Logs().i('[FCM] Token obtained for client: $_fcmToken');
+          await setupPusher(
+            client: client,
+            gatewayUrl: 'https://api.qnskk.top/_matrix/push/v1/notify',
+            token: _fcmToken,
           );
+          return;
         }
-      }
-      if (_fcmToken == null) {
-        await _noFcmWarning();
-        return;
+      } catch (e, s) {
+        Logs().w('[FCM] setupFirebase error', e, s);
       }
     }
-    await setupPusher(
-      client: client,
-      gatewayUrl: AppSettings.pushNotificationsGatewayUrl.value,
-      token: _fcmToken,
-    );
+    await _noFcmWarning();
   }
 
   Future<void> _newUpEndpoint(PushEndpoint newPushEndpoint, String i) async {
