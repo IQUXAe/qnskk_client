@@ -191,7 +191,19 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
 
     try {
       if (state.initialized) {
-        await client.restoreCryptoIdentity(passphrase);
+        try {
+          await client.restoreCryptoIdentity(passphrase);
+        } on InvalidPassphraseException catch (_) {
+          value.recoveryKey = await client.initCryptoIdentity(
+            passphrase: passphrase,
+            wipeCrossSigning: true,
+            wipeKeyBackup: true,
+            wipeSecureStorage: true,
+            setupMasterKey: true,
+            setupSelfSigningKey: true,
+            setupUserSigningKey: true,
+          );
+        }
       } else {
         value.recoveryKey = await client.initCryptoIdentity(
           passphrase: passphrase,
