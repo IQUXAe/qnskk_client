@@ -1,6 +1,4 @@
-// SPDX-FileCopyrightText: 2019-Present Christian Kußowski
-// SPDX-FileCopyrightText: 2019-Present Contributors to FluffyChat
-//
+// SPDX-FileCopyrightText: 2019-Present Contributors to QNSKK
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import 'dart:ui';
@@ -14,41 +12,30 @@ abstract class AppConfig {
   static const bool hideTypingUsernames = false;
 
   static const String inviteLinkPrefix = 'https://matrix.to/#/';
-  static const String deepLinkPrefix = 'im.fluffychat://chat/';
+  static const String deepLinkPrefix = 'org.iquxae.qnskk://chat/';
   static const String schemePrefix = 'matrix:';
-  static const String pushNotificationsChannelId = 'fluffychat_push';
-  static const String pushNotificationsAppId = 'chat.fluffy.fluffychat';
+  static const String pushNotificationsChannelId = 'qnskk_push';
+  static const String pushNotificationsAppId = 'org.iquxae.qnskk';
   static const double borderRadius = 18.0;
   static const double spaceBorderRadius = 11.0;
   static const double columnWidth = 360.0;
 
-  static const String enablePushTutorial =
-      'https://fluffychat.im/faq/#push_without_google_services';
-  static const String encryptionTutorial =
-      'https://fluffychat.im/faq/#how_to_use_end_to_end_encryption';
-  static const String startChatTutorial =
-      'https://fluffychat.im/faq/#how_do_i_find_other_users';
-  static const String howDoIGetStickersTutorial =
-      'https://fluffychat.im/faq/#how_do_i_get_stickers';
+  static const String enablePushTutorial = '';
+  static const String encryptionTutorial = '';
+  static const String startChatTutorial = '';
+  static const String howDoIGetStickersTutorial = '';
   static const String appId = 'org.iquxae.qnskk';
-  static const String appOpenUrlScheme = 'im.fluffychat';
-  static const String appSsoUrlScheme = 'im.fluffychat.auth';
+  static const String appOpenUrlScheme = 'org.iquxae.qnskk';
+  static const String appSsoUrlScheme = 'org.iquxae.qnskk.auth';
 
-  static const String sourceCodeUrl =
-      'https://github.com/krille-chan/fluffychat';
-  static const String supportUrl =
-      'https://github.com/krille-chan/fluffychat/issues';
-  static const String changelogUrl = 'https://fluffychat.im/changelog/';
-  static const String helpUrl =
-      'https://fluffychat.im/faq/#how_can_i_support_fluffychat';
+  static const String sourceCodeUrl = '';
+  static const String supportUrl = '';
+  static const String changelogUrl = '';
+  static const String helpUrl = '';
 
   static const Set<String> defaultReactions = {'👍', '❤️', '😂', '😮', '😢'};
 
-  static final Uri newIssueUrl = Uri(
-    scheme: 'https',
-    host: 'github.com',
-    path: '/krille-chan/fluffychat/issues/new',
-  );
+  static final Uri newIssueUrl = Uri();
 
   static const String mainIsolatePortName = 'main_isolate';
   static const String pushIsolatePortName = 'push_isolate';

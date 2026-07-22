@@ -110,6 +110,7 @@ abstract class ClientManager {
       inner: innerClient,
       encryptionKey: sharedSecret,
       clientPublicKey: clientPubkey,
+      serverUri: serverUri,
     );
 
     return Client(

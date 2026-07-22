@@ -9,6 +9,8 @@ import 'package:http/http.dart' as http;
 import 'package:just_zstd/just_zstd.dart';
 import 'package:matrix/matrix_api_lite/utils/logs.dart';
 
+import 'tunnel_key_manager.dart';
+
 String base64UrlNoPad(List<int> bytes) =>
     base64Url.encode(bytes).replaceAll('=', '');
 
@@ -150,8 +152,10 @@ Future<_EncryptedBytes> _encryptBytes(
 /// with ChaCha20-Poly1305 encryption and zstd compression.
 class TunnelHttpClient extends http.BaseClient {
   final http.Client _inner;
-  final Uint8List _encryptionKey;
-  final Uint8List _clientPublicKey;
+  Uint8List _encryptionKey;
+  Uint8List _clientPublicKey;
+  final String? _serverUri;
+  bool _isRefreshingKeys = false;
 
   static const int maxHeaderValueSize = 31 * 1024;
   static const int maxOriginalBodySize = 100 * 1024 * 1024;
@@ -180,11 +184,13 @@ class TunnelHttpClient extends http.BaseClient {
     required http.Client inner,
     required Uint8List encryptionKey,
     required Uint8List clientPublicKey,
+    String? serverUri,
   }) : assert(encryptionKey.length == 32),
        assert(clientPublicKey.length == 32),
        _inner = inner,
        _encryptionKey = encryptionKey,
-       _clientPublicKey = clientPublicKey;
+       _clientPublicKey = clientPublicKey,
+       _serverUri = serverUri;
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
@@ -196,9 +202,46 @@ class TunnelHttpClient extends http.BaseClient {
     try {
       return await _tunnelRequest(request);
     } catch (e, s) {
+      if (e is http.ClientException &&
+          _shouldAttemptKeyRotation(e) &&
+          _serverUri != null &&
+          !_isRefreshingKeys) {
+        Logs().w(
+          'Tunnel auth/session error encountered (${e.message}). Attempting key rotation with $_serverUri...',
+        );
+        try {
+          await _rotateAndApplyKeys();
+          return await _tunnelRequest(request);
+        } catch (retryErr, retryStack) {
+          Logs().e('Key rotation retry failed', retryErr, retryStack);
+        }
+      }
       if (e is http.ClientException) rethrow;
       Logs().w('Tunnel request failed before receiving a response', e, s);
       throw http.ClientException('Tunnel request failed: $e', request.url);
+    }
+  }
+
+  bool _shouldAttemptKeyRotation(http.ClientException e) {
+    final msg = e.message.toLowerCase();
+    return msg.contains('403') ||
+        msg.contains('400') ||
+        msg.contains('bad tunnel mac') ||
+        msg.contains('replayed tunnel request') ||
+        msg.contains('invalid tunnel client key');
+  }
+
+  Future<void> _rotateAndApplyKeys() async {
+    if (_serverUri == null || _isRefreshingKeys) return;
+    _isRefreshingKeys = true;
+    try {
+      final newSecret =
+          await TunnelKeyManager.instance.rotateKeys(_serverUri!);
+      final newPubkey = await TunnelKeyManager.instance.clientPublicKey;
+      _encryptionKey = newSecret;
+      _clientPublicKey = newPubkey;
+    } finally {
+      _isRefreshingKeys = false;
     }
   }
 
