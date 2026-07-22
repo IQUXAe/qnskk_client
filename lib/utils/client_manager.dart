@@ -30,18 +30,8 @@ abstract class ClientManager {
     bool initialize = true,
     required SharedPreferences store,
   }) async {
-    final clientNames = <String>{};
-    try {
-      final clientNamesList = store.getStringList(clientNamespace) ?? [];
-      clientNames.addAll(clientNamesList);
-    } catch (e, s) {
-      Logs().w('Client names in store are corrupted', e, s);
-      await store.remove(clientNamespace);
-    }
-    if (clientNames.isEmpty) {
-      clientNames.add(PlatformInfos.appDisplayName);
-      await store.setStringList(clientNamespace, clientNames.toList());
-    }
+    final clientNames = <String>{PlatformInfos.appDisplayName};
+    await store.setStringList(clientNamespace, clientNames.toList());
     final clients = await Future.wait(
       clientNames.map((name) => createClient(name, store)),
     );
@@ -65,17 +55,6 @@ abstract class ClientManager {
               ),
         ),
       );
-    }
-    if (clients.length > 1 && clients.any((c) => !c.isLogged())) {
-      final loggedOutClients = clients.where((c) => !c.isLogged()).toList();
-      for (final client in loggedOutClients) {
-        Logs().w(
-          'Multi account is enabled but client ${client.userID} is not logged in. Removing...',
-        );
-        clientNames.remove(client.clientName);
-        clients.remove(client);
-      }
-      await store.setStringList(clientNamespace, clientNames.toList());
     }
     return clients;
   }

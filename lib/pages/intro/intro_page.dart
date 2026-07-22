@@ -37,9 +37,7 @@ class IntroPage extends StatelessWidget {
     return LoginScaffold(
       appBar: AppBar(
         centerTitle: true,
-        title: addMultiAccount
-            ? Text(L10n.of(context).addAccount)
-            : Text(AppSettings.applicationName.value),
+        title: Text(AppSettings.applicationName.value),
         actions: [
           PopupMenuButton(
             useRootNavigator: true,

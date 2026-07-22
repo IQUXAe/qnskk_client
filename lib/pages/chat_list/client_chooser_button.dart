@@ -131,16 +131,6 @@ class ClientChooserButton extends StatelessWidget {
               ),
             ),
       ],
-      PopupMenuItem(
-        value: SettingsAction.addAccount,
-        child: Row(
-          children: [
-            const Icon(Icons.person_add_outlined),
-            const SizedBox(width: 18),
-            Text(L10n.of(context).addAccount),
-          ],
-        ),
-      ),
     ];
   }
 
@@ -179,10 +169,6 @@ class ClientChooserButton extends StatelessWidget {
       controller.setActiveBundle(object);
     } else if (object is SettingsAction) {
       switch (object) {
-        case SettingsAction.addAccount:
-          if (!context.mounted) return;
-          context.go('/rooms/settings/addaccount');
-          break;
         case SettingsAction.newGroup:
           context.go('/rooms/newgroup');
           break;
@@ -200,4 +186,4 @@ class ClientChooserButton extends StatelessWidget {
   }
 }
 
-enum SettingsAction { addAccount, newGroup, setStatus, settings, archive }
+enum SettingsAction { newGroup, setStatus, settings, archive }
