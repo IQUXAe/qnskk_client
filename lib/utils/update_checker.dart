@@ -95,7 +95,7 @@ class UpdateChecker {
   static const String _defaultManifestUrl = String.fromEnvironment(
     'QNSKK_UPDATE_MANIFEST_URL',
     defaultValue:
-        'https://raw.githubusercontent.com/iquxae/qnskk_matrix/main/version.json',
+        'https://github.com/IQUXAe/qnskk_client/releases/latest/download/version.json',
   );
 
   UpdateCheckerResult? _cachedResult;
