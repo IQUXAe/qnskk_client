@@ -1,0 +1,171 @@
+name: QNSKK Automated Build & Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.0.0)'
+        required: true
+        default: '1.0.0'
+      min_required_code:
+        description: 'Minimum required version code to block outdated clients (e.g. 10000)'
+        required: true
+        default: '10000'
+      changelog_ru:
+        description: 'Russian changelog'
+        required: false
+        default: '• Релиз QNSKK 1.0.0\n• Повышена стабильность и безопасность соединения'
+      changelog_en:
+        description: 'English changelog'
+        required: false
+        default: '• QNSKK 1.0.0 release\n• Improved connection stability and security'
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    name: Build Signed APKs & Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Free up disk space
+        uses: ./.github/actions/free_up_space
+
+      - name: Set up Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Get Dependencies
+        run: flutter pub get
+
+      - name: Decode Android Keystore & Verify Signature
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        if: ${{ env.KEYSTORE_BASE64 != '' }}
+        run: |
+          python3 -c "
+          import base64, hashlib, os, subprocess
+
+          b64_raw = os.environ.get('KEYSTORE_BASE64', '')
+          b64_clean = ''.join(b64_raw.split())
+          keystore_bytes = base64.b64decode(b64_clean)
+          sha256_hash = hashlib.sha256(keystore_bytes).hexdigest()
+
+          os.makedirs('android/app', exist_ok=True)
+          with open('android/app/qnskk-release.jks', 'wb') as f:
+              f.write(keystore_bytes)
+
+          alias = os.environ.get('KEY_ALIAS', '').strip() or 'qnskk-release-key'
+          key_pass = os.environ.get('KEY_PASSWORD', '').strip()
+          store_pass = os.environ.get('STORE_PASSWORD', '').strip()
+
+          if not key_pass or not store_pass:
+              print('[ERROR] ANDROID_KEY_PASSWORD and ANDROID_STORE_PASSWORD must be set in GitHub Secrets!')
+              raise SystemExit(1)
+
+          content = f'keyAlias={alias}\nkeyPassword={key_pass}\nstoreFile=app/qnskk-release.jks\nstorePassword={store_pass}\n'
+          with open('android/key.properties', 'w') as f:
+              f.write(content)
+
+          print(f'[CI] Keystore size: {len(keystore_bytes)} bytes | SHA256: {sha256_hash}')
+          print(f'[CI] key.properties written with alias \"{alias}\"')
+
+          res = subprocess.run(['keytool', '-list', '-keystore', 'android/app/qnskk-release.jks', '-storepass', store_pass], capture_output=True, text=True)
+          if res.returncode != 0:
+              print(f'[ERROR] keytool validation failed for storepass length {len(store_pass)}:')
+              print(f'STDOUT: {res.stdout.strip()}')
+              print(f'STDERR: {res.stderr.strip()}')
+              raise SystemExit(1)
+          print('[CI] Keystore password verified successfully with keytool!')
+          "
+
+      - name: Build Split-Per-ABI APKs (arm64-v8a & armeabi-v7a)
+        run: flutter build apk --release --split-per-abi
+
+      - name: Build Universal APK
+        run: flutter build apk --release
+
+      - name: Prepare Release Artifacts & Generate version.json
+        id: prep
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+            TAG_NAME="v${VERSION}"
+            MIN_REQUIRED_CODE="${{ inputs.min_required_code }}"
+            CHANGELOG_RU="${{ inputs.changelog_ru }}"
+            CHANGELOG_EN="${{ inputs.changelog_en }}"
+          else
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            VERSION="${TAG_NAME#v}"
+            CHANGELOG_RU="QNSKK release ${TAG_NAME}. Improved stability and performance."
+            CHANGELOG_EN="QNSKK release ${TAG_NAME}. Improved stability and performance."
+            MIN_REQUIRED_CODE=10000
+            if [ -f "release_config.json" ]; then
+              MIN_REQ=$(jq -r '.min_required_code // empty' release_config.json)
+              if [ -n "$MIN_REQ" ]; then
+                MIN_REQUIRED_CODE=$MIN_REQ
+              fi
+            fi
+          fi
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          VERSION_CODE=$(( ${MAJOR:-1} * 10000 + ${MINOR:-0} * 100 + ${PATCH:-0} ))
+
+          REPO_URL="https://github.com/${{ github.repository }}"
+          
+          mkdir -p release_artifacts
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk release_artifacts/qnskk-${TAG_NAME}-arm64-v8a.apk
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk release_artifacts/qnskk-${TAG_NAME}-armeabi-v7a.apk
+          cp build/app/outputs/flutter-apk/app-release.apk release_artifacts/qnskk-${TAG_NAME}-universal.apk
+
+          python3 -c "
+          import json, os
+          data = {
+              'latest_version': '${VERSION}',
+              'version_code': ${VERSION_CODE},
+              'min_required_code': ${MIN_REQUIRED_CODE},
+              'changelog': {
+                  'ru': '''${CHANGELOG_RU}''',
+                  'en': '''${CHANGELOG_EN}'''
+              },
+              'assets': {
+                  'arm64-v8a': '${REPO_URL}/releases/download/${TAG_NAME}/qnskk-${TAG_NAME}-arm64-v8a.apk',
+                  'armeabi-v7a': '${REPO_URL}/releases/download/${TAG_NAME}/qnskk-${TAG_NAME}-armeabi-v7a.apk',
+                  'universal': '${REPO_URL}/releases/download/${TAG_NAME}/qnskk-${TAG_NAME}-universal.apk'
+              }
+          }
+          with open('release_artifacts/version.json', 'w', encoding='utf-8') as f:
+              json.dump(data, f, ensure_ascii=False, indent=2)
+          "
+          echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release & Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.prep.outputs.tag_name }}
+          name: QNSKK ${{ steps.prep.outputs.tag_name }}
+          files: |
+            release_artifacts/qnskk-*-arm64-v8a.apk
+            release_artifacts/qnskk-*-armeabi-v7a.apk
+            release_artifacts/qnskk-*-universal.apk
+            release_artifacts/version.json
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,7 +1,8 @@
 {
-    "[dart]": {
-        "editor.codeActionsOnSave": [
-            "source.organizeImports"
-        ]
-    }
+  "[dart]": {
+    "editor.codeActionsOnSave": [
+      "source.organizeImports"
+    ]
+  },
+  "dart.flutterSdkPath": ".fvm/versions/stable"
 }

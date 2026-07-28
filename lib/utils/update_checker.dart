@@ -1,0 +1,237 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+enum UpdateType {
+  none,
+  soft,
+  hard,
+}
+
+class UpdateManifest {
+  final String latestVersion;
+  final int versionCode;
+  final int minRequiredCode;
+  final Map<String, String> changelog;
+  final Map<String, String> assets;
+
+  UpdateManifest({
+    required this.latestVersion,
+    required this.versionCode,
+    required this.minRequiredCode,
+    required this.changelog,
+    required this.assets,
+  });
+
+  factory UpdateManifest.fromJson(Map<String, dynamic> json) {
+    final changelogMap = <String, String>{};
+    if (json['changelog'] is Map) {
+      (json['changelog'] as Map).forEach((k, v) {
+        changelogMap[k.toString()] = v.toString();
+      });
+    }
+
+    final assetsMap = <String, String>{};
+    if (json['assets'] is Map) {
+      (json['assets'] as Map).forEach((k, v) {
+        assetsMap[k.toString()] = v.toString();
+      });
+    }
+
+    return UpdateManifest(
+      latestVersion: json['latest_version'] as String? ?? '1.0.0',
+      versionCode: (json['version_code'] as num?)?.toInt() ?? 0,
+      minRequiredCode: (json['min_required_code'] as num?)?.toInt() ?? 0,
+      changelog: changelogMap,
+      assets: assetsMap,
+    );
+  }
+
+  String getChangelog(String localeCode) {
+    if (changelog.containsKey(localeCode)) {
+      return changelog[localeCode]!;
+    }
+    final lang = localeCode.split('_').first.toLowerCase();
+    if (changelog.containsKey(lang)) {
+      return changelog[lang]!;
+    }
+    return changelog['en'] ?? changelog['ru'] ?? '';
+  }
+
+  String? getAssetUrlForAbi(String abi) {
+    if (assets.containsKey(abi)) {
+      return assets[abi];
+    }
+    return assets['universal'] ?? assets.values.firstOrNull;
+  }
+}
+
+class UpdateCheckerResult {
+  final UpdateType type;
+  final UpdateManifest? manifest;
+  final String? targetAbi;
+  final String? downloadUrl;
+  final int currentVersionCode;
+
+  UpdateCheckerResult({
+    required this.type,
+    this.manifest,
+    this.targetAbi,
+    this.downloadUrl,
+    required this.currentVersionCode,
+  });
+}
+
+class UpdateChecker {
+  UpdateChecker._();
+  static final UpdateChecker instance = UpdateChecker._();
+
+  static const String _defaultManifestUrl = String.fromEnvironment(
+    'QNSKK_UPDATE_MANIFEST_URL',
+    defaultValue:
+        'https://raw.githubusercontent.com/iquxae/qnskk_matrix/main/version.json',
+  );
+
+  UpdateCheckerResult? _cachedResult;
+  UpdateCheckerResult? get cachedResult => _cachedResult;
+
+  /// Detects the target CPU ABI for Android (arm64-v8a, armeabi-v7a, or universal).
+  Future<String> getDeviceAbi() async {
+    if (kIsWeb) return 'universal';
+    if (Platform.isAndroid) {
+      try {
+        final androidInfo = await DeviceInfoPlugin().androidInfo;
+        final abis = androidInfo.supportedAbis;
+        if (abis.contains('arm64-v8a')) {
+          return 'arm64-v8a';
+        } else if (abis.contains('armeabi-v7a')) {
+          return 'armeabi-v7a';
+        }
+      } catch (e) {
+        debugPrint('QNSKK Update: Error detecting Android ABI: $e');
+      }
+    }
+    return 'universal';
+  }
+
+  /// Verifies if GitHub / external internet is reachable before showing update UI.
+  Future<bool> isExternalInternetReachable() async {
+    if (kIsWeb) return true;
+    try {
+      final socket = await Socket.connect(
+        'github.com',
+        443,
+        timeout: const Duration(seconds: 3),
+      );
+      socket.destroy();
+      return true;
+    } catch (_) {
+      try {
+        final socket = await Socket.connect(
+          'api.github.com',
+          443,
+          timeout: const Duration(seconds: 3),
+        );
+        socket.destroy();
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+  }
+
+  /// Detects whether active connection is via cellular (mobile data).
+  Future<bool> isMobileDataConnection() async {
+    if (kIsWeb) return false;
+    try {
+      final interfaces = await NetworkInterface.list();
+      for (final interface in interfaces) {
+        final name = interface.name.toLowerCase();
+        if (name.contains('rmnet') ||
+            name.contains('ccmni') ||
+            name.contains('pdp') ||
+            name.contains('cellular') ||
+            name.contains('mobile') ||
+            name.contains('lte')) {
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  /// Performs full check for updates.
+  Future<UpdateCheckerResult> checkForUpdates({String? manifestUrl}) async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      final currentCode = int.tryParse(packageInfo.buildNumber) ?? 0;
+
+      final isReachable = await isExternalInternetReachable();
+      if (!isReachable) {
+        debugPrint(
+          'QNSKK Update: External internet / GitHub is not reachable. Skipping update prompt.',
+        );
+        _cachedResult = UpdateCheckerResult(
+          type: UpdateType.none,
+          currentVersionCode: currentCode,
+        );
+        return _cachedResult!;
+      }
+
+      final url = Uri.parse(manifestUrl ?? _defaultManifestUrl);
+      final response = await http.get(url).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode != 200) {
+        _cachedResult = UpdateCheckerResult(
+          type: UpdateType.none,
+          currentVersionCode: currentCode,
+        );
+        return _cachedResult!;
+      }
+
+      final jsonMap = jsonDecode(response.body) as Map<String, dynamic>;
+      final manifest = UpdateManifest.fromJson(jsonMap);
+
+      final abi = await getDeviceAbi();
+      final downloadUrl = manifest.getAssetUrlForAbi(abi);
+
+      var type = UpdateType.none;
+      if (currentCode < manifest.minRequiredCode) {
+        type = UpdateType.hard;
+      } else if (currentCode < manifest.versionCode) {
+        type = UpdateType.soft;
+      }
+
+      _cachedResult = UpdateCheckerResult(
+        type: type,
+        manifest: manifest,
+        targetAbi: abi,
+        downloadUrl: downloadUrl,
+        currentVersionCode: currentCode,
+      );
+      return _cachedResult!;
+    } catch (e, s) {
+      debugPrint('QNSKK Update: Error checking for updates: $e\n$s');
+      _cachedResult = UpdateCheckerResult(
+        type: UpdateType.none,
+        currentVersionCode: 0,
+      );
+      return _cachedResult!;
+    }
+  }
+
+  /// Triggers the download/installation of the release APK.
+  Future<bool> startUpdate(String downloadUrl) async {
+    final uri = Uri.parse(downloadUrl);
+    if (await canLaunchUrl(uri)) {
+      return await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+    return false;
+  }
+}

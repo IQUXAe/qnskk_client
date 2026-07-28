@@ -172,7 +172,6 @@ app.*.symbols
 .agents/skills/personal-*
 /.agent-shell/
 
-
 # +++++++++ Custom +++++++++
 
 # Web
@@ -198,3 +197,6 @@ android/app/google-services.json
 # iOS
 ios/Runner.ipa
 ios/Runner/GoogleServices-Info.plist
+
+# FVM Version Cache
+.fvm/

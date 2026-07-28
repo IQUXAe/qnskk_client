@@ -18,8 +18,10 @@ import 'package:flutter/material.dart';
 import 'package:matrix/matrix.dart';
 
 import '../../config/themes.dart';
+import '../../utils/show_update_snackbar.dart';
 import '../../widgets/adaptive_dialogs/user_dialog.dart';
 import '../../widgets/matrix.dart';
+import '../../widgets/update_banner.dart';
 import 'chat_list_header.dart';
 
 class ChatListViewBody extends StatelessWidget {
@@ -79,6 +81,18 @@ class ChatListViewBody extends StatelessWidget {
           controller: controller.scrollController,
           slivers: [
             ChatListHeader(controller: controller),
+            SliverToBoxAdapter(
+              child: ValueListenableBuilder(
+                valueListenable: UpdateNotifier.softUpdateNotifier,
+                builder: (context, updateResult, _) {
+                  if (updateResult == null) return const SizedBox.shrink();
+                  return SoftUpdateBannerWidget(
+                    updateResult: updateResult,
+                    onDismiss: UpdateNotifier.dismissSoftUpdate,
+                  );
+                },
+              ),
+            ),
             SliverList(
               delegate: SliverChildListDelegate([
                 if (controller.isSearchMode) ...[

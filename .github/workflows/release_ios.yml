@@ -1,0 +1,142 @@
+name: QNSKK iOS TrollStore Automated Build & Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.0.0)'
+        required: true
+        default: '1.0.0'
+      min_required_code:
+        description: 'Minimum required version code to block outdated clients (e.g. 10000)'
+        required: true
+        default: '10000'
+      changelog_ru:
+        description: 'Russian changelog'
+        required: false
+        default: '• Релиз QNSKK 1.0.0\n• Повышена стабильность и безопасность соединения'
+      changelog_en:
+        description: 'English changelog'
+        required: false
+        default: '• QNSKK 1.0.0 release\n• Improved connection stability and security'
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-ios-trollstore:
+    name: Build TrollStore IPA & Create Release
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /Library/Developer/CommandLineTools
+          echo "export CARGO_BUILD_JOBS=2" >> $GITHUB_ENV
+
+      - name: Set up Rust toolchain for vodozemac
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,x86_64-apple-ios
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install CocoaPods & Dependencies
+        run: |
+          flutter pub get
+          cd ios
+          pod install --repo-update
+          cd ..
+
+      - name: Build Unsigned iOS Archive (TrollStore Compatible)
+        run: |
+          flutter build ipa --no-codesign --release
+
+      - name: Package TrollStore IPA
+        run: |
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_NAME="v${{ inputs.version }}"
+          fi
+          
+          mkdir -p release_artifacts
+          mkdir -p Payload
+          
+          # Locate built Runner.app
+          APP_PATH=$(find build/ios/archive/ -name "Runner.app" 2>/dev/null | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find build/ios/iphoneos/ -name "Runner.app" 2>/dev/null | head -n 1)
+          fi
+          
+          echo "Found app at: $APP_PATH"
+          cp -r "$APP_PATH" Payload/
+          zip -r "release_artifacts/qnskk-${TAG_NAME}-trollstore.ipa" Payload
+          rm -rf Payload
+
+      - name: Prepare Release Artifacts & Generate version.json
+        id: prep
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+            TAG_NAME="v${VERSION}"
+            MIN_REQUIRED_CODE="${{ inputs.min_required_code }}"
+            CHANGELOG_RU="${{ inputs.changelog_ru }}"
+            CHANGELOG_EN="${{ inputs.changelog_en }}"
+          else
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            VERSION="${TAG_NAME#v}"
+            CHANGELOG_RU="QNSKK release ${TAG_NAME}. Improved stability and performance."
+            CHANGELOG_EN="QNSKK release ${TAG_NAME}. Improved stability and performance."
+            MIN_REQUIRED_CODE=10000
+            if [ -f "release_config.json" ]; then
+              MIN_REQ=$(jq -r '.min_required_code // empty' release_config.json)
+              if [ -n "$MIN_REQ" ]; then
+                MIN_REQUIRED_CODE=$MIN_REQ
+              fi
+            fi
+          fi
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          VERSION_CODE=$(( ${MAJOR:-1} * 10000 + ${MINOR:-0} * 100 + ${PATCH:-0} ))
+          REPO_URL="https://github.com/${{ github.repository }}"
+          
+          python3 -c "
+          import json, os
+          data = {
+              'latest_version': '${VERSION}',
+              'version_code': ${VERSION_CODE},
+              'min_required_code': ${MIN_REQUIRED_CODE},
+              'changelog': {
+                  'ru': '''${CHANGELOG_RU}''',
+                  'en': '''${CHANGELOG_EN}'''
+              },
+              'assets': {
+                  'ios-trollstore': '${REPO_URL}/releases/download/${TAG_NAME}/qnskk-${TAG_NAME}-trollstore.ipa',
+                  'universal': '${REPO_URL}/releases/download/${TAG_NAME}/qnskk-${TAG_NAME}-trollstore.ipa'
+              }
+          }
+          with open('release_artifacts/version.json', 'w', encoding='utf-8') as f:
+              json.dump(data, f, ensure_ascii=False, indent=2)
+          "
+          echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release & Upload IPA
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.prep.outputs.tag_name }}
+          name: QNSKK iOS TrollStore ${{ steps.prep.outputs.tag_name }}
+          files: |
+            release_artifacts/qnskk-*-trollstore.ipa
+            release_artifacts/version.json
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
