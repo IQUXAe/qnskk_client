@@ -18,6 +18,7 @@ class SoftUpdateBannerWidget extends StatefulWidget {
 
 class _SoftUpdateBannerWidgetState extends State<SoftUpdateBannerWidget> {
   bool _isDownloading = false;
+  double _downloadProgress = 0.0;
 
   Future<void> _handleUpdateClick(BuildContext context) async {
     final downloadUrl = widget.updateResult.downloadUrl;
@@ -55,8 +56,20 @@ class _SoftUpdateBannerWidgetState extends State<SoftUpdateBannerWidget> {
       if (confirmMobile != true) return;
     }
 
-    setState(() => _isDownloading = true);
-    await UpdateChecker.instance.startUpdate(downloadUrl);
+    setState(() {
+      _isDownloading = true;
+      _downloadProgress = 0.0;
+    });
+
+    await UpdateChecker.instance.downloadAndInstallUpdate(
+      downloadUrl,
+      onProgress: (progress) {
+        if (mounted) {
+          setState(() => _downloadProgress = progress);
+        }
+      },
+    );
+
     if (mounted) {
       setState(() => _isDownloading = false);
     }
@@ -97,11 +110,12 @@ class _SoftUpdateBannerWidgetState extends State<SoftUpdateBannerWidget> {
                   ),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.close, size: 20),
-                onPressed: widget.onDismiss,
-                tooltip: isRu ? 'Закрыть' : 'Dismiss',
-              ),
+              if (!_isDownloading)
+                IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  onPressed: widget.onDismiss,
+                  tooltip: isRu ? 'Закрыть' : 'Dismiss',
+                ),
             ],
           ),
           if (changelog.isNotEmpty) ...[
@@ -116,28 +130,43 @@ class _SoftUpdateBannerWidgetState extends State<SoftUpdateBannerWidget> {
             ),
           ],
           const SizedBox(height: 12.0),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: widget.onDismiss,
-                child: Text(isRu ? 'Позже' : 'Later'),
-              ),
-              const SizedBox(width: 8.0),
-              FilledButton(
-                onPressed: _isDownloading
-                    ? null
-                    : () => _handleUpdateClick(context),
-                child: _isDownloading
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(isRu ? 'Обновить' : 'Update'),
-              ),
-            ],
-          ),
+          if (_isDownloading) ...[
+            LinearProgressIndicator(
+              value: _downloadProgress > 0 ? _downloadProgress : null,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            const SizedBox(height: 6.0),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  isRu ? 'Загрузка и установка...' : 'Downloading and installing...',
+                  style: theme.textTheme.bodySmall,
+                ),
+                Text(
+                  '${(_downloadProgress * 100).toInt()}%',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: widget.onDismiss,
+                  child: Text(isRu ? 'Позже' : 'Later'),
+                ),
+                const SizedBox(width: 8.0),
+                FilledButton(
+                  onPressed: () => _handleUpdateClick(context),
+                  child: Text(isRu ? 'Обновить' : 'Update'),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -167,6 +196,7 @@ class MandatoryUpdateDialog extends StatefulWidget {
 
 class _MandatoryUpdateDialogState extends State<MandatoryUpdateDialog> {
   bool _isDownloading = false;
+  double _downloadProgress = 0.0;
 
   Future<void> _handleUpdateClick(BuildContext context) async {
     final downloadUrl = widget.updateResult.downloadUrl;
@@ -204,8 +234,20 @@ class _MandatoryUpdateDialogState extends State<MandatoryUpdateDialog> {
       if (confirmMobile != true) return;
     }
 
-    setState(() => _isDownloading = true);
-    await UpdateChecker.instance.startUpdate(downloadUrl);
+    setState(() {
+      _isDownloading = true;
+      _downloadProgress = 0.0;
+    });
+
+    await UpdateChecker.instance.downloadAndInstallUpdate(
+      downloadUrl,
+      onProgress: (progress) {
+        if (mounted) {
+          setState(() => _downloadProgress = progress);
+        }
+      },
+    );
+
     if (mounted) {
       setState(() => _isDownloading = false);
     }
@@ -254,6 +296,29 @@ class _MandatoryUpdateDialogState extends State<MandatoryUpdateDialog> {
                 ),
               ),
             ],
+            if (_isDownloading) ...[
+              const SizedBox(height: 16.0),
+              LinearProgressIndicator(
+                value: _downloadProgress > 0 ? _downloadProgress : null,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              const SizedBox(height: 6.0),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    isRu ? 'Загрузка и установка...' : 'Downloading and installing...',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  Text(
+                    '${(_downloadProgress * 100).toInt()}%',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
         actions: [
@@ -263,15 +328,11 @@ class _MandatoryUpdateDialogState extends State<MandatoryUpdateDialog> {
               onPressed: _isDownloading
                   ? null
                   : () => _handleUpdateClick(context),
-              child: _isDownloading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(
-                      isRu ? 'Обновить QNSKK' : 'Update QNSKK',
-                    ),
+              child: Text(
+                _isDownloading
+                    ? (isRu ? 'Загрузка...' : 'Downloading...')
+                    : (isRu ? 'Обновить QNSKK' : 'Update QNSKK'),
+              ),
             ),
           ),
         ],

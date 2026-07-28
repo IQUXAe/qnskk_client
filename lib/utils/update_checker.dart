@@ -4,8 +4,10 @@ import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 enum UpdateType {
@@ -202,10 +204,12 @@ class UpdateChecker {
       final downloadUrl = manifest.getAssetUrlForAbi(abi);
 
       var type = UpdateType.none;
-      if (currentCode < manifest.minRequiredCode) {
-        type = UpdateType.hard;
-      } else if (currentCode < manifest.versionCode) {
-        type = UpdateType.soft;
+      if (currentCode > 0) {
+        if (currentCode < manifest.minRequiredCode) {
+          type = UpdateType.hard;
+        } else if (currentCode < manifest.versionCode) {
+          type = UpdateType.soft;
+        }
       }
 
       _cachedResult = UpdateCheckerResult(
@@ -226,12 +230,84 @@ class UpdateChecker {
     }
   }
 
-  /// Triggers the download/installation of the release APK.
-  Future<bool> startUpdate(String downloadUrl) async {
-    final uri = Uri.parse(downloadUrl);
-    if (await canLaunchUrl(uri)) {
-      return await launchUrl(uri, mode: LaunchMode.externalApplication);
+  /// Downloads the APK file to temporary cache and triggers installation.
+  /// Reports download progress (0.0 to 1.0) via [onProgress].
+  Future<bool> downloadAndInstallUpdate(
+    String downloadUrl, {
+    void Function(double progress)? onProgress,
+  }) async {
+    try {
+      final uri = Uri.parse(downloadUrl);
+      final client = http.Client();
+      final request = http.Request('GET', uri);
+      final response = await client.send(request);
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          'QNSKK Update: Download failed with status ${response.statusCode}',
+        );
+        return false;
+      }
+
+      final contentLength = response.contentLength ?? 0;
+      final tempDir = await getTemporaryDirectory();
+      final apkFile = File('${tempDir.path}/qnskk_update.apk');
+
+      if (await apkFile.exists()) {
+        await apkFile.delete();
+      }
+
+      final sink = apkFile.openWrite();
+      var downloaded = 0;
+
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        downloaded += chunk.length;
+        if (contentLength > 0 && onProgress != null) {
+          onProgress(downloaded / contentLength);
+        }
+      }
+      await sink.close();
+      client.close();
+
+      if (!await apkFile.exists() || await apkFile.length() == 0) {
+        debugPrint('QNSKK Update: Downloaded file is empty or missing');
+        return false;
+      }
+
+      onProgress?.call(1.0);
+
+      // Launch native Android installer via MethodChannel if on Android
+      if (!kIsWeb && Platform.isAndroid) {
+        try {
+          const channel = MethodChannel('org.iquxae.qnskk/installer');
+          final success = await channel.invokeMethod<bool>('installApk', {
+            'filePath': apkFile.path,
+          });
+          if (success == true) return true;
+        } catch (e) {
+          debugPrint(
+            'QNSKK Update: Native installer error: $e. Falling back to url_launcher',
+          );
+        }
+      }
+
+      // Fallback for non-Android or if native install fails
+      if (await canLaunchUrl(uri)) {
+        return await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+      return false;
+    } catch (e, s) {
+      debugPrint('QNSKK Update: Download/Install error: $e\n$s');
+      return false;
     }
-    return false;
+  }
+
+  /// Triggers the download/installation of the release APK.
+  Future<bool> startUpdate(
+    String downloadUrl, {
+    void Function(double progress)? onProgress,
+  }) async {
+    return downloadAndInstallUpdate(downloadUrl, onProgress: onProgress);
   }
 }
