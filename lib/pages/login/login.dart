@@ -110,16 +110,12 @@ class LoginController extends State<Login> {
     } on MatrixException catch (exception) {
       if (!mounted) return;
       final msg = exception.errorMessage;
-      if (msg.contains('http error response') ||
-          msg.contains('M_FORBIDDEN') ||
-          msg.contains('InvalidUsername') ||
-          msg.contains('403') ||
-          msg.contains('400')) {
+      if (msg.contains('http error response')) {
         final isRu = Localizations.localeOf(context).languageCode == 'ru';
         setState(
           () => passwordError = isRu
-              ? 'Неверное имя пользователя или пароль'
-              : 'Invalid username or password',
+              ? 'Ошибка соединения с сервером QNSKK'
+              : 'Connection error to QNSKK server',
         );
       } else {
         setState(() => passwordError = msg);
@@ -128,15 +124,12 @@ class LoginController extends State<Login> {
     } catch (exception) {
       if (!mounted) return;
       final str = exception.toString();
-      if (str.contains('http error response') ||
-          str.contains('403') ||
-          str.contains('400') ||
-          str.contains('M_FORBIDDEN')) {
+      if (str.contains('http error response')) {
         final isRu = Localizations.localeOf(context).languageCode == 'ru';
         setState(
           () => passwordError = isRu
-              ? 'Неверное имя пользователя или пароль'
-              : 'Invalid username or password',
+              ? 'Ошибка соединения с сервером QNSKK'
+              : 'Connection error to QNSKK server',
         );
       } else {
         setState(() => passwordError = str);

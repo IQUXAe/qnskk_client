@@ -639,6 +639,29 @@ class TunnelHttpClient extends http.BaseClient {
         url,
       );
     }
+
+    if (response.statusCode >= 400) {
+      // Check if this is a valid Matrix JSON error response from origin homeserver
+      bool isMatrixJson = false;
+      if (bodyBytes.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(utf8.decode(bodyBytes));
+          if (decoded is Map &&
+              (decoded.containsKey('errcode') || decoded.containsKey('error'))) {
+            isMatrixJson = true;
+          }
+        } catch (_) {}
+      }
+
+      if (!isMatrixJson) {
+        final bodyStr = bodyBytes.isNotEmpty ? utf8.decode(bodyBytes) : '';
+        throw http.ClientException(
+          'Tunnel error (HTTP ${response.statusCode}): $bodyStr',
+          url,
+        );
+      }
+    }
+
     if (bodyBytes.isEmpty &&
         response.statusCode >= 200 &&
         response.statusCode < 300) {
