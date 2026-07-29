@@ -23,6 +23,7 @@ class SettingsPrivacy extends StatelessWidget {
         centerTitle: isColumnMode,
       ),
       body: MaxWidthBody(
+        withScrolling: false,
         child: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
           children: [

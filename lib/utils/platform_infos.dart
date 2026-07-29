@@ -53,6 +53,6 @@ abstract class PlatformInfos {
   }
 
   static Future<void> showDialog(BuildContext context) async {
-    context.go('/settings/about');
+    context.go('/rooms/settings/about');
   }
 }

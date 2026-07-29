@@ -3,7 +3,6 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import 'package:async/async.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/fluffy_share.dart';
 import 'package:fluffychat/widgets/avatar.dart';
@@ -11,7 +10,6 @@ import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:matrix/matrix.dart' hide Result;
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../widgets/mxc_image_viewer.dart';
 import 'settings.dart';
@@ -120,26 +118,7 @@ class SettingsView extends StatelessWidget {
                 );
               },
             ),
-            FutureBuilder(
-              future: Result.capture(
-                Matrix.of(context).client.getAuthMetadata(),
-              ).then((result) => result.asValue?.value),
-              builder: (context, snapshot) {
-                final accountManageUrl = snapshot.data?.accountManagementUri;
-                if (accountManageUrl == null) {
-                  return const SizedBox.shrink();
-                }
-                return ListTile(
-                  leading: const Icon(Icons.account_circle_outlined),
-                  title: Text(L10n.of(context).manageAccount),
-                  trailing: const Icon(Icons.open_in_new_outlined),
-                  onTap: () => launchUrl(
-                    accountManageUrl,
-                    mode: LaunchMode.inAppBrowserView,
-                  ),
-                );
-              },
-            ),
+
             Divider(color: theme.dividerColor),
             ListTile(
               leading: Icon(
@@ -201,12 +180,18 @@ class SettingsView extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.privacy_tip_outlined),
               title: Text(L10n.of(context).privacy),
-              onTap: () => context.go('/settings/privacy'),
+              onTap: () => context.go('/rooms/settings/privacy'),
+              tileColor: activeRoute.startsWith('/rooms/settings/privacy')
+                  ? theme.colorScheme.surfaceContainerHigh
+                  : null,
             ),
             ListTile(
               leading: const Icon(Icons.info_outline_rounded),
               title: Text(L10n.of(context).about),
-              onTap: () => context.go('/settings/about'),
+              onTap: () => context.go('/rooms/settings/about'),
+              tileColor: activeRoute.startsWith('/rooms/settings/about')
+                  ? theme.colorScheme.surfaceContainerHigh
+                  : null,
             ),
             Divider(color: theme.dividerColor),
             ListTile(

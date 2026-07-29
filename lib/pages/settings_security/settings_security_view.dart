@@ -42,13 +42,18 @@ class SettingsSecurityView extends StatelessWidget {
         iconColor: theme.colorScheme.onSurface,
         child: MaxWidthBody(
           child: FutureBuilder(
-            future: Matrix.of(
-              context,
-            ).client.getCapabilities().timeout(const Duration(seconds: 10)),
+            future: () async {
+              try {
+                return await Matrix.of(context)
+                    .client
+                    .getCapabilities()
+                    .timeout(const Duration(seconds: 10));
+              } catch (_) {
+                return Capabilities();
+              }
+            }(),
             builder: (context, snapshot) {
-              final capabilities = snapshot.data;
-              final error = snapshot.error;
-              if (error == null && capabilities == null) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(
                   child: Padding(
                     padding: EdgeInsets.all(16.0),
@@ -56,6 +61,7 @@ class SettingsSecurityView extends StatelessWidget {
                   ),
                 );
               }
+              final capabilities = snapshot.data ?? Capabilities();
               return Column(
                 children: [
                   ListTile(
@@ -193,8 +199,7 @@ class SettingsSecurityView extends StatelessWidget {
                       style: const TextStyle(fontFamily: 'RobotoMono'),
                     ),
                   ),
-                  if (capabilities?.mChangePassword?.enabled != false ||
-                      error != null)
+                  if (capabilities.mChangePassword?.enabled != false)
                     ListTile(
                       leading: const Icon(Icons.password_outlined),
                       trailing: const Icon(Icons.chevron_right_outlined),
