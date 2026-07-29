@@ -29,7 +29,10 @@ class RegisterController extends State<Register> {
       setState(() => showPassword = !loading && !showPassword);
 
   Future<void> register() async {
-    final username = usernameController.text.trim();
+    // Sanitize username: strip leading @, domain suffix, lowercase.
+    var username = usernameController.text.trim().toLowerCase();
+    if (username.startsWith('@')) username = username.substring(1);
+    if (username.contains(':')) username = username.split(':').first;
     final password = passwordController.text;
 
     if (username.isEmpty) {
@@ -91,8 +94,22 @@ class RegisterController extends State<Register> {
         loading = false;
       });
     } catch (e) {
+      final str = e.toString();
+      final isRu = Localizations.localeOf(context).languageCode == 'ru';
+      final isTunnelOrNetwork = str.contains('Tunnel error') ||
+          str.contains('ClientException') ||
+          str.contains('SocketException') ||
+          str.contains('Connection refused') ||
+          str.contains('Connection reset') ||
+          str.contains('Connection timed out') ||
+          str.contains('HandshakeException') ||
+          str.contains('http error response');
       setState(() {
-        passwordError = e.toString();
+        passwordError = isTunnelOrNetwork
+            ? (isRu
+                ? 'Ошибка соединения с сервером QNSKK. Проверьте подключение к сети.'
+                : 'Connection error to QNSKK server. Check your network connection.')
+            : str;
         loading = false;
       });
     }

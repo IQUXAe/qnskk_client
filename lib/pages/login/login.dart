@@ -109,27 +109,31 @@ class LoginController extends State<Login> {
       }
     } on MatrixException catch (exception) {
       if (!mounted) return;
-      final msg = exception.errorMessage;
-      if (msg.contains('http error response')) {
-        final isRu = Localizations.localeOf(context).languageCode == 'ru';
-        setState(
-          () => passwordError = isRu
-              ? 'Ошибка соединения с сервером QNSKK'
-              : 'Connection error to QNSKK server',
-        );
-      } else {
-        setState(() => passwordError = msg);
-      }
+      // Always show the real Matrix server error message (e.g. "Wrong username
+      // or password") directly. The server's errcode/error is already
+      // human-readable enough and gives the user accurate information.
+      setState(() => passwordError = exception.errorMessage);
       return setState(() => loading = false);
     } catch (exception) {
       if (!mounted) return;
       final str = exception.toString();
-      if (str.contains('http error response')) {
-        final isRu = Localizations.localeOf(context).languageCode == 'ru';
+      final isRu = Localizations.localeOf(context).languageCode == 'ru';
+      // Tunnel / network errors include keywords like 'Tunnel error',
+      // 'ClientException', 'SocketException', 'Connection refused', etc.
+      // Show a generic connection error instead of raw internal text.
+      final isTunnelOrNetwork = str.contains('Tunnel error') ||
+          str.contains('ClientException') ||
+          str.contains('SocketException') ||
+          str.contains('Connection refused') ||
+          str.contains('Connection reset') ||
+          str.contains('Connection timed out') ||
+          str.contains('HandshakeException') ||
+          str.contains('http error response');
+      if (isTunnelOrNetwork) {
         setState(
           () => passwordError = isRu
-              ? 'Ошибка соединения с сервером QNSKK'
-              : 'Connection error to QNSKK server',
+              ? 'Ошибка соединения с сервером QNSKK. Проверьте подключение к сети.'
+              : 'Connection error to QNSKK server. Check your network connection.',
         );
       } else {
         setState(() => passwordError = str);

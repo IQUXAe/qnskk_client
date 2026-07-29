@@ -224,11 +224,15 @@ class TunnelHttpClient extends http.BaseClient {
 
   bool _shouldAttemptKeyRotation(http.ClientException e) {
     final msg = e.message.toLowerCase();
-    return msg.contains('403') ||
-        msg.contains('400') ||
-        msg.contains('bad tunnel mac') ||
+    // Only rotate on genuine tunnel crypto errors (MAC failure, nonce replay,
+    // or unknown/invalid client key). Do NOT rotate on generic HTTP 4xx
+    // statuses, because those may be legitimate Matrix error responses
+    // (wrong password, rate-limit, missing token, etc.) that have nothing
+    // to do with the tunnel key state.
+    return msg.contains('bad tunnel mac') ||
         msg.contains('replayed tunnel request') ||
-        msg.contains('invalid tunnel client key');
+        msg.contains('invalid tunnel client key') ||
+        msg.contains('bad tunnel request');
   }
 
   Future<void> _rotateAndApplyKeys() async {
