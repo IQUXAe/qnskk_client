@@ -25,6 +25,7 @@ import 'package:fluffychat/pages/new_private_chat/new_private_chat.dart';
 import 'package:fluffychat/pages/register/register.dart';
 import 'package:fluffychat/pages/settings/settings.dart';
 import 'package:fluffychat/pages/settings_3pid/settings_3pid.dart';
+import 'package:fluffychat/pages/settings_about/settings_about.dart';
 import 'package:fluffychat/pages/settings_chat/settings_chat.dart';
 import 'package:fluffychat/pages/settings_emotes/settings_emotes.dart';
 import 'package:fluffychat/pages/settings_ignore_list/settings_ignore_list.dart';
@@ -249,6 +250,14 @@ abstract class AppRoutes {
                         const DevicesSettings(),
                       ),
                       redirect: loggedOutRedirect,
+                    ),
+                    GoRoute(
+                      path: 'about',
+                      pageBuilder: (context, state) => defaultPageBuilder(
+                        context,
+                        state,
+                        const SettingsAbout(),
+                      ),
                     ),
                     GoRoute(
                       path: 'chat',

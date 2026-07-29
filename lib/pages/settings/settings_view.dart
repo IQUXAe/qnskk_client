@@ -7,7 +7,6 @@ import 'package:async/async.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/fluffy_share.dart';
-import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
@@ -209,7 +208,7 @@ class SettingsView extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.info_outline_rounded),
               title: Text(L10n.of(context).about),
-              onTap: () => PlatformInfos.showDialog(context),
+              onTap: () => context.go('/settings/about'),
             ),
             Divider(color: theme.dividerColor),
             ListTile(
