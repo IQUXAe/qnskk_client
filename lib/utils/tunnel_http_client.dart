@@ -716,7 +716,10 @@ class TunnelHttpClient extends http.BaseClient {
         try {
           final decoded = jsonDecode(utf8.decode(bodyBytes));
           if (decoded is Map &&
-              (decoded.containsKey('errcode') || decoded.containsKey('error'))) {
+              (decoded.containsKey('errcode') ||
+               decoded.containsKey('error') ||
+               decoded.containsKey('flows') ||
+               decoded.containsKey('session'))) {
             isMatrixJson = true;
           }
         } catch (_) {}
