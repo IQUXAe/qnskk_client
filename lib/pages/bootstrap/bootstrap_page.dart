@@ -26,11 +26,15 @@ class BootstrapPage extends StatelessWidget {
         final cryptoIdentityState = viewModel.value.cryptoIdentityState;
         final showLoading =
             cryptoIdentityState == null || viewModel.value.isLoading;
-        if (cryptoIdentityState?.connected == true && !reset) {
+        if (reset) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => viewModel.performAutomaticReset(context),
+          );
+        } else if (cryptoIdentityState?.connected == true) {
           WidgetsBinding.instance.addPostFrameCallback(
             (_) => viewModel.goToRoomsPageAfterSuccess(context),
           );
-        } else if (cryptoIdentityState != null && !reset) {
+        } else if (cryptoIdentityState != null) {
           WidgetsBinding.instance.addPostFrameCallback(
             (_) => viewModel.tryAutoRecovery(context),
           );

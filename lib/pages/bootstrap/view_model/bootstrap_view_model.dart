@@ -3,6 +3,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import 'dart:convert';
+import 'dart:math';
+
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/error_reporter.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
@@ -26,6 +29,7 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
   final TextEditingController repeatPassphraseController =
       TextEditingController();
   bool _autoRecoveryAttempted = false;
+  bool _autoResetAttempted = false;
 
   bool _disposed = false;
 
@@ -193,6 +197,79 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
         ).onErrorCallback(e, s);
       } else {
         Logs().w('Unable to auto restore crypto identity', e, s);
+      }
+    }
+  }
+
+  Future<void> performAutomaticReset(BuildContext context) async {
+    if (_autoResetAttempted || value.isLoading) return;
+
+    final userId = client.userID?.toString();
+    if (userId == null) return;
+
+    _autoResetAttempted = true;
+    value.isLoading = true;
+    notifyListeners();
+
+    try {
+      var passphrase = QnskkRecoveryPassphrase.take(userId);
+
+      if (passphrase == null && supportsSecureStorage) {
+        try {
+          passphrase =
+              await FlutterSecureStorage().read(key: _secureStorageKey);
+        } catch (e, s) {
+          Logs().w(
+            'Unable to read passphrase from secure storage for reset',
+            e,
+            s,
+          );
+        }
+      }
+
+      if (passphrase == null) {
+        final randomBytes = List<int>.generate(
+          32,
+          (_) => Random().nextInt(256),
+        );
+        passphrase = base64Url.encode(randomBytes).replaceAll('=', '');
+      }
+
+      await client.initCryptoIdentity(
+        passphrase: passphrase,
+        wipeCrossSigning: true,
+        wipeKeyBackup: true,
+        wipeSecureStorage: true,
+        setupMasterKey: true,
+        setupSelfSigningKey: true,
+        setupUserSigningKey: true,
+      );
+
+      if (supportsSecureStorage) {
+        await FlutterSecureStorage().write(
+          key: _secureStorageKey,
+          value: passphrase,
+        );
+      }
+
+      value.cryptoIdentityState = await client.getCryptoIdentityState();
+      value.isLoading = false;
+      notifyListeners();
+
+      if (context.mounted) {
+        goToRoomsPageAfterSuccess(context);
+      }
+    } catch (e, s) {
+      value.isLoading = false;
+      notifyListeners();
+      if (context.mounted) {
+        ErrorReporter(
+          context,
+          'Unable to reset crypto identity',
+        ).onErrorCallback(e, s);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toLocalizedString(context))),
+        );
       }
     }
   }
