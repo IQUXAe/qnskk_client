@@ -31,8 +31,10 @@ import 'package:fluffychat/pages/settings_emotes/settings_emotes.dart';
 import 'package:fluffychat/pages/settings_ignore_list/settings_ignore_list.dart';
 import 'package:fluffychat/pages/settings_notifications/settings_notifications.dart';
 import 'package:fluffychat/pages/settings_password/settings_password.dart';
+import 'package:fluffychat/pages/settings_privacy/settings_privacy.dart';
 import 'package:fluffychat/pages/settings_security/settings_security.dart';
 import 'package:fluffychat/pages/settings_style/settings_style.dart';
+import 'package:fluffychat/pages/settings_terms/settings_terms.dart';
 import 'package:fluffychat/widgets/config_viewer.dart';
 import 'package:fluffychat/widgets/layouts/empty_page.dart';
 import 'package:fluffychat/widgets/layouts/two_column_layout.dart';
@@ -257,6 +259,22 @@ abstract class AppRoutes {
                         context,
                         state,
                         const SettingsAbout(),
+                      ),
+                    ),
+                    GoRoute(
+                      path: 'privacy',
+                      pageBuilder: (context, state) => defaultPageBuilder(
+                        context,
+                        state,
+                        const SettingsPrivacy(),
+                      ),
+                    ),
+                    GoRoute(
+                      path: 'terms',
+                      pageBuilder: (context, state) => defaultPageBuilder(
+                        context,
+                        state,
+                        const SettingsTerms(),
                       ),
                     ),
                     GoRoute(

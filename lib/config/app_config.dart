@@ -28,7 +28,16 @@ abstract class AppConfig {
   static const String appOpenUrlScheme = 'org.iquxae.qnskk';
   static const String appSsoUrlScheme = 'org.iquxae.qnskk.auth';
 
-  static const String sourceCodeUrl = '';
+  static const String projectName = 'QNSKK Project';
+  static const String primaryDeveloper = 'IQUXAe';
+  static const String clientBase = 'FluffyChat (Christian Kußowski & Contributors)';
+  static const String serverBase = 'Conduit Matrix Homeserver (Timo Koster, Famedly & Contributors)';
+  static const String clientSourceCodeUrl = 'https://github.com/IQUXAe/qnskk_client';
+  static const String clientLicenseName = 'GNU Affero General Public License v3.0 (AGPLv3)';
+  static const String serverLicenseName = 'Closed-Source / Proprietary (Закрытый исходный код)';
+  static const String serverLocationRegion = 'Germany (EU / ФРГ)';
+
+  static const String sourceCodeUrl = clientSourceCodeUrl;
   static const String supportUrl = '';
   static const String changelogUrl = '';
   static const String helpUrl = '';

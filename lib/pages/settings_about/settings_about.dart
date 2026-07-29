@@ -80,7 +80,7 @@ class _SettingsAboutState extends State<SettingsAbout> {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'QNSKK Project',
+                        AppConfig.projectName,
                         style: theme.textTheme.headlineSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                           letterSpacing: 0.5,
@@ -123,10 +123,10 @@ class _SettingsAboutState extends State<SettingsAbout> {
                 ),
                 child: Column(
                   children: [
-                    const ListTile(
-                      leading: Icon(Icons.code_rounded),
-                      title: Text('Основной разработчик'),
-                      subtitle: Text('IQUXAe'),
+                    ListTile(
+                      leading: const Icon(Icons.code_rounded),
+                      title: const Text('Основной разработчик'),
+                      subtitle: Text(AppConfig.primaryDeveloper),
                     ),
                     Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.5)),
                     const ListTile(
@@ -135,20 +135,16 @@ class _SettingsAboutState extends State<SettingsAbout> {
                       subtitle: Text('Matrix Protocol Foundation (spec.matrix.org)'),
                     ),
                     Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.5)),
-                    const ListTile(
-                      leading: Icon(Icons.phone_android_outlined),
-                      title: Text('Клиентское приложение'),
-                      subtitle: Text(
-                        'Создано на основе FluffyChat\nРазработчик: Christian Kußowski & FluffyChat Contributors',
-                      ),
+                    ListTile(
+                      leading: const Icon(Icons.phone_android_outlined),
+                      title: const Text('Клиентское приложение'),
+                      subtitle: Text('Создано на основе ${AppConfig.clientBase}'),
                     ),
                     Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.5)),
-                    const ListTile(
-                      leading: Icon(Icons.dns_outlined),
-                      title: Text('Серверная инфраструктура'),
-                      subtitle: Text(
-                        'Создана на основе Conduit Matrix Homeserver\nРазработчик: Timo Koster, Famedly & Conduit Contributors',
-                      ),
+                    ListTile(
+                      leading: const Icon(Icons.dns_outlined),
+                      title: const Text('Серверная инфраструктура'),
+                      subtitle: Text('Создана на основе ${AppConfig.serverBase}'),
                     ),
                   ],
                 ),
@@ -156,8 +152,8 @@ class _SettingsAboutState extends State<SettingsAbout> {
 
               const SizedBox(height: 24),
 
-              // Section: Source Code
-              const _SectionHeader(title: 'Исходный код'),
+              // Section: Source Code & Licenses
+              const _SectionHeader(title: 'Исходный код и лицензирование'),
               const SizedBox(height: 8),
 
               Card(
@@ -168,21 +164,64 @@ class _SettingsAboutState extends State<SettingsAbout> {
                     color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
                   ),
                 ),
-                child: ListTile(
-                  leading: const Icon(Icons.open_in_new_rounded),
-                  title: const Text('Репозиторий проекта'),
-                  subtitle: const Text('https://github.com/IQUXAe/qnskk_client'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => launchUrlString(
-                    'https://github.com/IQUXAe/qnskk_client',
-                  ),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.open_in_new_rounded),
+                      title: const Text('Клиентский репозиторий'),
+                      subtitle: Text('${AppConfig.clientSourceCodeUrl}\nЛицензия: ${AppConfig.clientLicenseName}'),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => launchUrlString(AppConfig.clientSourceCodeUrl),
+                    ),
+                    Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.5)),
+                    ListTile(
+                      leading: const Icon(Icons.lock_outline_rounded),
+                      title: const Text('Серверная часть и Edge Proxy'),
+                      subtitle: Text(AppConfig.serverLicenseName),
+                    ),
+                  ],
                 ),
               ),
 
               const SizedBox(height: 24),
 
-              // Section: License
-              const _SectionHeader(title: 'Лицензия'),
+              // Section: Legal Documents
+              const _SectionHeader(title: 'Правовые документы'),
+              const SizedBox(height: 8),
+
+              Card(
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppConfig.borderRadius),
+                  side: BorderSide(
+                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.shield_moon_outlined),
+                      title: const Text('Политика конфиденциальности'),
+                      subtitle: Text('Защита данных GDPR / DSGVO (${AppConfig.serverLocationRegion})'),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => context.go('/settings/privacy'),
+                    ),
+                    Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.5)),
+                    ListTile(
+                      leading: const Icon(Icons.description_outlined),
+                      title: const Text('Условия использования'),
+                      subtitle: const Text('Пользовательское соглашение и отказ от гарантий'),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => context.go('/settings/terms'),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Section: License text dropdown
+              const _SectionHeader(title: 'Текст лицензии AGPL-3.0'),
               const SizedBox(height: 8),
 
               Card(
@@ -196,7 +235,7 @@ class _SettingsAboutState extends State<SettingsAbout> {
                 child: ExpansionTile(
                   leading: const Icon(Icons.gavel_outlined),
                   title: const Text('Лицензия AGPL-3.0'),
-                  subtitle: const Text('GNU Affero General Public License v3.0'),
+                  subtitle: Text(AppConfig.clientLicenseName),
                   children: [
                     Padding(
                       padding: const EdgeInsets.all(16.0),
@@ -242,7 +281,7 @@ class _SettingsAboutState extends State<SettingsAbout> {
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () => showLicensePage(
                         context: context,
-                        applicationName: 'QNSKK Project',
+                        applicationName: AppConfig.projectName,
                         applicationVersion: _version,
                       ),
                     ),
