@@ -88,7 +88,6 @@ dependencies:
   video_player: ^2.13.0
   wakelock_plus: ^1.6.1
   webrtc_interface: ^1.5.1
-  just_zstd: ^0.2.0
   integration_test:
     sdk: flutter
 

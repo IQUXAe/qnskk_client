@@ -6,10 +6,74 @@ import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:http/http.dart' as http;
-import 'package:just_zstd/just_zstd.dart';
 import 'package:matrix/matrix_api_lite/utils/logs.dart';
 
 import 'tunnel_key_manager.dart';
+
+/// Minimal RFC 8878 Zstandard raw block encoder.
+///
+/// Encodes raw (uncompressed) Zstandard frames compliant with RFC 8878.
+/// Supports both single-segment and multi-block payloads.
+Uint8List _zstdRawEncode(Uint8List input) {
+  const magic = 0xFD2FB528;
+  const maxBlockSize = 128 * 1024; // 131072 bytes (RFC 8878 max raw block size)
+
+  final contentSize = input.length;
+  final isSingleSegment = contentSize <= maxBlockSize;
+  final blockCount =
+      contentSize == 0 ? 1 : (contentSize + maxBlockSize - 1) ~/ maxBlockSize;
+
+  final headerLen = 4 + 1 + (isSingleSegment ? 0 : 1) + 4;
+  final totalLen = headerLen + blockCount * 3 + contentSize;
+  final out = Uint8List(totalLen);
+  var pos = 0;
+
+  // Magic number (LE uint32).
+  out[pos++] = magic & 0xFF;
+  out[pos++] = (magic >> 8) & 0xFF;
+  out[pos++] = (magic >> 16) & 0xFF;
+  out[pos++] = (magic >> 24) & 0xFF;
+
+  if (isSingleSegment) {
+    // FCS_Flag = 2 (4-byte FCS), Single_Segment = 1 -> 0xA0
+    out[pos++] = 0xA0;
+  } else {
+    // FCS_Flag = 2 (4-byte FCS), Single_Segment = 0 -> 0x80
+    out[pos++] = 0x80;
+    // Window_Descriptor = 0x88 (128 MB window size)
+    out[pos++] = 0x88;
+  }
+
+  // Frame_Content_Size — 4 bytes LE.
+  out[pos++] = contentSize & 0xFF;
+  out[pos++] = (contentSize >> 8) & 0xFF;
+  out[pos++] = (contentSize >> 16) & 0xFF;
+  out[pos++] = (contentSize >> 24) & 0xFF;
+
+  // Data blocks (raw / uncompressed, Block_Type = 0).
+  for (var i = 0; i < blockCount; i++) {
+    final start = i * maxBlockSize;
+    final end =
+        (start + maxBlockSize < contentSize) ? start + maxBlockSize : contentSize;
+    final size = end - start;
+    final isLast = i == blockCount - 1 ? 1 : 0;
+
+    // Block_Header (3 bytes LE):
+    //   Bit 0:        Last_Block flag
+    //   Bits 2-1:     Block_Type (0 = Raw)
+    //   Bits 23-3:    Block_Size
+    final header = isLast | (size << 3);
+    out[pos++] = header & 0xFF;
+    out[pos++] = (header >> 8) & 0xFF;
+    out[pos++] = (header >> 16) & 0xFF;
+
+    // Raw payload.
+    out.setRange(pos, pos + size, input, start);
+    pos += size;
+  }
+
+  return out;
+}
 
 String base64UrlNoPad(List<int> bytes) =>
     base64Url.encode(bytes).replaceAll('=', '');
@@ -84,9 +148,7 @@ Future<_IsolateResult> _compressAndEncrypt(_IsolatePayload payload) async {
   if (bodyB64 != null) jsonMap['body'] = bodyB64;
 
   final jsonBytes = utf8.encode(jsonEncode(jsonMap));
-  final compressed = const ZstdEncoder().encodeBytes(
-    Uint8List.fromList(jsonBytes),
-  );
+  final compressed = _zstdRawEncode(Uint8List.fromList(jsonBytes));
 
   final chacha20 = Chacha20.poly1305Aead();
   final nonce = _randomBytes(12);
@@ -224,23 +286,26 @@ class TunnelHttpClient extends http.BaseClient {
 
   bool _shouldAttemptKeyRotation(http.ClientException e) {
     final msg = e.message.toLowerCase();
-    // Only rotate on genuine tunnel crypto errors (MAC failure, nonce replay,
-    // or unknown/invalid client key). Do NOT rotate on generic HTTP 4xx
-    // statuses, because those may be legitimate Matrix error responses
-    // (wrong password, rate-limit, missing token, etc.) that have nothing
-    // to do with the tunnel key state.
-    return msg.contains('bad tunnel mac') ||
+    // Only rotate on genuine tunnel crypto errors: MAC authentication failure
+    // (server returns HTTP 403 "Forbidden") or nonce replay. Do NOT match the
+    // generic "bad tunnel request" 400 body because that is the catch-all
+    // server-side text for ANY unclassified error (missing headers, invalid
+    // JSON, oversized payload, etc.) and has nothing to do with key staleness.
+    // Similarly, do not rotate on HTTP 4xx responses that are legitimate Matrix
+    // error responses (wrong password, rate-limit, missing token, etc.).
+    return msg.contains('http 403') ||
+        msg.contains('bad tunnel mac') ||
         msg.contains('replayed tunnel request') ||
-        msg.contains('invalid tunnel client key') ||
-        msg.contains('bad tunnel request');
+        msg.contains('invalid tunnel client key');
   }
 
   Future<void> _rotateAndApplyKeys() async {
-    if (_serverUri == null || _isRefreshingKeys) return;
+    final serverUri = _serverUri;
+    if (serverUri == null || _isRefreshingKeys) return;
     _isRefreshingKeys = true;
     try {
       final newSecret =
-          await TunnelKeyManager.instance.rotateKeys(_serverUri!);
+          await TunnelKeyManager.instance.rotateKeys(serverUri);
       final newPubkey = await TunnelKeyManager.instance.clientPublicKey;
       _encryptionKey = newSecret;
       _clientPublicKey = newPubkey;
@@ -646,7 +711,7 @@ class TunnelHttpClient extends http.BaseClient {
 
     if (response.statusCode >= 400) {
       // Check if this is a valid Matrix JSON error response from origin homeserver
-      bool isMatrixJson = false;
+      var isMatrixJson = false;
       if (bodyBytes.isNotEmpty) {
         try {
           final decoded = jsonDecode(utf8.decode(bodyBytes));
