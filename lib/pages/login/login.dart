@@ -60,7 +60,16 @@ class LoginController extends State<Login> {
     _coolDown?.cancel();
 
     try {
-      final username = usernameController.text;
+      var username = usernameController.text.trim();
+      if (!username.isEmail && !username.isPhoneNumber) {
+        if (username.startsWith('@')) {
+          username = username.substring(1);
+        }
+        if (username.contains(':')) {
+          username = username.split(':').first;
+        }
+      }
+
       AuthenticationIdentifier identifier;
       if (username.isEmail) {
         identifier = AuthenticationThirdPartyIdentifier(
@@ -99,10 +108,39 @@ class LoginController extends State<Login> {
         context.go('/backup');
       }
     } on MatrixException catch (exception) {
-      setState(() => passwordError = exception.errorMessage);
+      if (!mounted) return;
+      final msg = exception.errorMessage;
+      if (msg.contains('http error response') ||
+          msg.contains('M_FORBIDDEN') ||
+          msg.contains('InvalidUsername') ||
+          msg.contains('403') ||
+          msg.contains('400')) {
+        final isRu = Localizations.localeOf(context).languageCode == 'ru';
+        setState(
+          () => passwordError = isRu
+              ? 'Неверное имя пользователя или пароль'
+              : 'Invalid username or password',
+        );
+      } else {
+        setState(() => passwordError = msg);
+      }
       return setState(() => loading = false);
     } catch (exception) {
-      setState(() => passwordError = exception.toString());
+      if (!mounted) return;
+      final str = exception.toString();
+      if (str.contains('http error response') ||
+          str.contains('403') ||
+          str.contains('400') ||
+          str.contains('M_FORBIDDEN')) {
+        final isRu = Localizations.localeOf(context).languageCode == 'ru';
+        setState(
+          () => passwordError = isRu
+              ? 'Неверное имя пользователя или пароль'
+              : 'Invalid username or password',
+        );
+      } else {
+        setState(() => passwordError = str);
+      }
       return setState(() => loading = false);
     }
 
