@@ -69,12 +69,18 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
   }
 
   Future<void> _init() async {
-    final state = value.cryptoIdentityState = await client
-        .getCryptoIdentityState();
+    try {
+      value.cryptoIdentityState = await client
+          .getCryptoIdentityState()
+          .timeout(const Duration(seconds: 4));
+    } catch (e, s) {
+      Logs().w('getCryptoIdentityState timed out in BootstrapViewModel, proceeding', e, s);
+    }
+    final state = value.cryptoIdentityState;
     newPassphraseController.addListener(_checkCanCreatePassphrase);
     repeatPassphraseController.addListener(_checkCanCreatePassphrase);
     enterPassphraseController.addListener(_passphraseEntered);
-    if (state.initialized) {
+    if (state != null && state.initialized) {
       if (state.connected) return notifyListeners();
 
       if (supportsSecureStorage) {
@@ -349,18 +355,19 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
         );
       }
     }
-    ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    context.go('/rooms');
+    messenger.showSnackBar(
       SnackBar(
-        duration: Duration(seconds: 5),
+        duration: const Duration(seconds: 4),
         showCloseIcon: true,
         backgroundColor: Colors.green.shade700,
         content: Text(
           L10n.of(context).youAreReadyToStart,
-          style: TextStyle(color: Colors.white),
+          style: const TextStyle(color: Colors.white),
         ),
       ),
     );
-    context.go('/rooms');
   }
 
   void toggleObscureText() {

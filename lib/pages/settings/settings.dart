@@ -186,17 +186,25 @@ class SettingsController extends State<Settings> {
     final client = Matrix.of(context).client;
     if (!client.encryptionEnabled) return;
     if (!client.isLogged()) return;
-    await client.accountDataLoading;
-    await client.userDeviceKeysLoading;
-    if (client.prevBatch == null) {
-      await client.onSync.stream.first;
-    }
+    try {
+      await client.accountDataLoading;
+      await client.userDeviceKeysLoading;
+      if (client.prevBatch == null) {
+        await client.onSync.stream.first.timeout(const Duration(seconds: 4));
+      }
 
-    final state = await client.getCryptoIdentityState();
-    if (!mounted) return;
-    setState(() {
-      cryptoIdentityConnected = state.initialized && state.connected;
-    });
+      final state = await client.getCryptoIdentityState().timeout(const Duration(seconds: 4));
+      if (!mounted) return;
+      setState(() {
+        cryptoIdentityConnected = state.initialized && state.connected;
+      });
+    } catch (e, s) {
+      Logs().w('checkBootstrap timed out/failed, falling back to encryptionEnabled', e, s);
+      if (!mounted) return;
+      setState(() {
+        cryptoIdentityConnected = client.encryptionEnabled;
+      });
+    }
   }
 
   bool? cryptoIdentityConnected;
