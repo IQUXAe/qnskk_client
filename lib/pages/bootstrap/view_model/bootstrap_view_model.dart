@@ -156,7 +156,7 @@ class BootstrapViewModel extends ValueNotifier<BootstrapViewModelState> {
     final userId = client.userID?.toString();
     if (state == null || state.connected || userId == null) return;
 
-    final passphrase = QnskkRecoveryPassphrase.take(userId);
+    final passphrase = await QnskkRecoveryPassphrase.getOrRestore(userId);
     if (passphrase == null) return;
 
     _autoRecoveryAttempted = true;

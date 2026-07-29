@@ -10,6 +10,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/file_selector.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/utils/qnskk_recovery_passphrase.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_modal_action_popup.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_text_input_dialog.dart';
@@ -193,7 +194,23 @@ class SettingsController extends State<Settings> {
         await client.onSync.stream.first.timeout(const Duration(seconds: 4));
       }
 
-      final state = await client.getCryptoIdentityState().timeout(const Duration(seconds: 4));
+      var state = await client.getCryptoIdentityState().timeout(const Duration(seconds: 4));
+
+      if (state.initialized && !state.connected) {
+        final userId = client.userID?.toString();
+        if (userId != null) {
+          final passphrase = await QnskkRecoveryPassphrase.getOrRestore(userId);
+          if (passphrase != null) {
+            try {
+              await client.restoreCryptoIdentity(passphrase);
+              state = await client.getCryptoIdentityState().timeout(const Duration(seconds: 4));
+            } catch (e, s) {
+              Logs().w('Auto restore crypto identity in checkBootstrap failed', e, s);
+            }
+          }
+        }
+      }
+
       if (!mounted) return;
       setState(() {
         cryptoIdentityConnected = state.initialized && state.connected;
