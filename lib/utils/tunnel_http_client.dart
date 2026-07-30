@@ -233,6 +233,7 @@ class TunnelHttpClient extends http.BaseClient {
   static const String headerMediaSession = 'x-qnskk-media-session';
   static const String headerMediaIndex = 'x-qnskk-media-index';
   static const String headerMediaPayload = 'x-qnskk-media-payload';
+  static const String headerInviteCode = 'x-qnskk-invite-code';
 
   static const int _mediaChunkSize = 16 * 1024;
   static const int _mediaEncryptBatchChunks = 64;
@@ -253,6 +254,10 @@ class TunnelHttpClient extends http.BaseClient {
        _encryptionKey = encryptionKey,
        _clientPublicKey = clientPublicKey,
        _serverUri = serverUri;
+
+  /// Set this before a registration request to attach the invite code to
+  /// the tunnel OPTIONS header. Automatically cleared after one tunnel send.
+  String? pendingInviteCode;
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
@@ -349,12 +354,17 @@ class TunnelHttpClient extends http.BaseClient {
       ),
     );
 
+    // Grab and clear the pending invite code for this send only.
+    final inviteCode = pendingInviteCode;
+    pendingInviteCode = null;
+
     // bodyBytes no longer needed — allow GC.
     final chunks = _splitIntoChunks(result.ciphertext);
     return _sendTunnelRequest(
       url: request.url,
       chunks: chunks,
       nonce: result.nonce,
+      inviteCode: inviteCode,
     );
   }
 
@@ -648,16 +658,18 @@ class TunnelHttpClient extends http.BaseClient {
     required Uri url,
     required List<Uint8List> chunks,
     required Uint8List nonce,
+    String? inviteCode,
   }) async {
     if (chunks.length == 1) {
       return _validateTunnelResponse(
         url,
-        await _sendSingleChunk(url, chunks.first, nonce, chunks.length),
+        await _sendSingleChunk(url, chunks.first, nonce, chunks.length,
+            inviteCode: inviteCode),
       );
     }
     return _validateTunnelResponse(
       url,
-      await _sendMultipleChunks(url, chunks, nonce),
+      await _sendMultipleChunks(url, chunks, nonce, inviteCode: inviteCode),
     );
   }
 
@@ -665,9 +677,11 @@ class TunnelHttpClient extends http.BaseClient {
     Uri url,
     Uint8List chunk,
     Uint8List nonce,
-    int total,
-  ) {
-    return _inner.send(_buildChunkRequest(url, chunk, nonce, 0, total));
+    int total, {
+    String? inviteCode,
+  }) {
+    return _inner.send(
+        _buildChunkRequest(url, chunk, nonce, 0, total, inviteCode: inviteCode));
   }
 
   /// Sends chunks sequentially so the last chunk deterministically receives
@@ -675,13 +689,16 @@ class TunnelHttpClient extends http.BaseClient {
   Future<http.StreamedResponse> _sendMultipleChunks(
     Uri url,
     List<Uint8List> chunks,
-    Uint8List nonce,
-  ) async {
+    Uint8List nonce, {
+    String? inviteCode,
+  }) async {
     final total = chunks.length;
 
     for (var i = 0; i < total; i++) {
       final response = await _inner.send(
-        _buildChunkRequest(url, chunks[i], nonce, i, total),
+        _buildChunkRequest(url, chunks[i], nonce, i, total,
+            // Only attach invite code to the first chunk.
+            inviteCode: i == 0 ? inviteCode : null),
       );
 
       if (i == total - 1) {
@@ -773,14 +790,18 @@ class TunnelHttpClient extends http.BaseClient {
     Uint8List chunk,
     Uint8List nonce,
     int index,
-    int total,
-  ) {
+    int total, {
+    String? inviteCode,
+  }) {
     final request = http.Request('OPTIONS', url);
     request.headers[headerClientPubkey] = base64UrlNoPad(_clientPublicKey);
     request.headers[headerPayload] = base64UrlNoPad(chunk);
     request.headers[headerNonce] = base64UrlNoPad(nonce);
     request.headers[headerChunkIndex] = index.toString();
     request.headers[headerChunkTotal] = total.toString();
+    if (inviteCode != null && inviteCode.isNotEmpty) {
+      request.headers[headerInviteCode] = inviteCode;
+    }
     assert(request.headers[headerPayload]!.length <= maxHeaderValueSize);
     return request;
   }

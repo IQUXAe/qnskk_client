@@ -12,6 +12,7 @@ class RegisterView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isRu = Localizations.localeOf(context).languageCode == 'ru';
 
     final homeserver = controller.widget.client.homeserver
         ?.toString()
@@ -82,9 +83,13 @@ class RegisterView extends StatelessWidget {
                 autofillHints:
                     controller.loading ? null : [AutofillHints.newPassword],
                 controller: controller.passwordController,
-                textInputAction: TextInputAction.go,
+                textInputAction: controller.inviteRequired
+                    ? TextInputAction.next
+                    : TextInputAction.go,
                 obscureText: !controller.showPassword,
-                onSubmitted: (_) => controller.register(),
+                onSubmitted: controller.inviteRequired
+                    ? null
+                    : (_) => controller.register(),
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Icons.lock_outlined),
                   errorText: controller.passwordError,
@@ -102,6 +107,39 @@ class RegisterView extends StatelessWidget {
                 ),
               ),
             ),
+            // Invite code field — shown only when invite system is enabled
+            if (!controller.checkingInviteConfig && controller.inviteRequired) ...[
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: TextField(
+                  readOnly: controller.loading,
+                  autocorrect: false,
+                  controller: controller.inviteController,
+                  textInputAction: TextInputAction.go,
+                  textCapitalization: TextCapitalization.characters,
+                  onSubmitted: (_) => controller.register(),
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.vpn_key_outlined),
+                    errorText: controller.inviteError,
+                    errorStyle: const TextStyle(color: Colors.orange),
+                    hintText: 'QNSKK-XXXXXX',
+                    labelText: isRu ? 'Код приглашения' : 'Invite Code',
+                    helperText: isRu
+                        ? 'Требуется для регистрации'
+                        : 'Required to register',
+                  ),
+                ),
+              ),
+            ],
+            // Loading indicator while checking invite config
+            if (controller.checkingInviteConfig) ...[
+              const SizedBox(height: 16),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 24),
+                child: LinearProgressIndicator(),
+              ),
+            ],
             const SizedBox(height: 16),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -110,7 +148,9 @@ class RegisterView extends StatelessWidget {
                   backgroundColor: theme.colorScheme.primary,
                   foregroundColor: theme.colorScheme.onPrimary,
                 ),
-                onPressed: controller.loading ? null : controller.register,
+                onPressed: controller.loading || controller.checkingInviteConfig
+                    ? null
+                    : controller.register,
                 child: controller.loading
                     ? const LinearProgressIndicator()
                     : Text(L10n.of(context).createNewAccount),
