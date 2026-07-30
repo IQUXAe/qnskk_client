@@ -41,6 +41,7 @@ class _SettingsAboutState extends State<SettingsAbout> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isColumnMode = FluffyThemes.isColumnMode(context);
+    final isRu = Localizations.localeOf(context).languageCode == 'ru';
 
     return Scaffold(
       appBar: AppBar(
@@ -89,14 +90,16 @@ class _SettingsAboutState extends State<SettingsAbout> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Версия $_version',
+                        isRu ? 'Версия $_version' : 'Version $_version',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'Высокозащищенная система обмена сообщениями, построенная на базе открытого сетевого протокола Matrix с применением сквозного шифрования (E2EE) и механизмов маскировки структуры трафика.',
+                        isRu
+                            ? 'Высокозащищённая система обмена сообщениями на базе протокола Matrix с E2EE и маскировкой трафика.'
+                            : 'A highly secure messaging system built on the Matrix protocol with E2EE and traffic obfuscation.',
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
@@ -111,7 +114,7 @@ class _SettingsAboutState extends State<SettingsAbout> {
               const SizedBox(height: 24),
 
               // Section: Architecture & Authors
-              const _SectionHeader(title: 'Архитектура и разработчики'),
+              _SectionHeader(title: isRu ? 'Архитектура и разработчики' : 'Architecture & Authors'),
               const SizedBox(height: 8),
 
               Card(
@@ -126,26 +129,34 @@ class _SettingsAboutState extends State<SettingsAbout> {
                   children: [
                     ListTile(
                       leading: const Icon(Icons.code_rounded),
-                      title: const Text('Основной разработчик'),
+                      title: Text(isRu ? 'Основной разработчик' : 'Lead Developer'),
                       subtitle: Text(AppConfig.primaryDeveloper),
                     ),
                     Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.5)),
-                    const ListTile(
-                      leading: Icon(Icons.hub_outlined),
-                      title: Text('Сетевой протокол'),
-                      subtitle: Text('Matrix Protocol Foundation (spec.matrix.org)'),
+                    ListTile(
+                      leading: const Icon(Icons.hub_outlined),
+                      title: Text(isRu ? 'Сетевой протокол' : 'Network Protocol'),
+                      subtitle: const Text('Matrix Protocol Foundation (spec.matrix.org)'),
                     ),
                     Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.5)),
                     ListTile(
                       leading: const Icon(Icons.phone_android_outlined),
-                      title: const Text('Клиентское приложение'),
-                      subtitle: Text('Создано на основе ${AppConfig.clientBase}'),
+                      title: Text(isRu ? 'Клиентское приложение' : 'Client Application'),
+                      subtitle: Text(
+                        isRu
+                            ? 'Создано на основе ${AppConfig.clientBase}'
+                            : 'Based on ${AppConfig.clientBase}',
+                      ),
                     ),
                     Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.5)),
                     ListTile(
                       leading: const Icon(Icons.dns_outlined),
-                      title: const Text('Серверная инфраструктура'),
-                      subtitle: Text('Создана на основе ${AppConfig.serverBase}'),
+                      title: Text(isRu ? 'Серверная инфраструктура' : 'Server Infrastructure'),
+                      subtitle: Text(
+                        isRu
+                            ? 'Создана на основе ${AppConfig.serverBase}'
+                            : 'Based on ${AppConfig.serverBase}',
+                      ),
                     ),
                   ],
                 ),
@@ -154,7 +165,7 @@ class _SettingsAboutState extends State<SettingsAbout> {
               const SizedBox(height: 24),
 
               // Section: Source Code & Licenses
-              const _SectionHeader(title: 'Исходный код и лицензирование'),
+              _SectionHeader(title: isRu ? 'Исходный код и лицензирование' : 'Source Code & Licensing'),
               const SizedBox(height: 8),
 
               Card(
@@ -169,15 +180,18 @@ class _SettingsAboutState extends State<SettingsAbout> {
                   children: [
                     ListTile(
                       leading: const Icon(Icons.open_in_new_rounded),
-                      title: const Text('Клиентский репозиторий'),
-                      subtitle: Text('${AppConfig.clientSourceCodeUrl}\nЛицензия: ${AppConfig.clientLicenseName}'),
+                      title: Text(isRu ? 'Клиентский репозиторий' : 'Client Repository'),
+                      subtitle: Text(
+                        '${AppConfig.clientSourceCodeUrl}\n'
+                        '${isRu ? "Лицензия" : "License"}: ${AppConfig.clientLicenseName}',
+                      ),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () => launchUrlString(AppConfig.clientSourceCodeUrl),
                     ),
                     Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.5)),
                     ListTile(
                       leading: const Icon(Icons.lock_outline_rounded),
-                      title: const Text('Серверная часть и Edge Proxy'),
+                      title: Text(isRu ? 'Серверная часть и Edge Proxy' : 'Server & Edge Proxy'),
                       subtitle: Text(AppConfig.serverLicenseName),
                     ),
                   ],
@@ -187,7 +201,7 @@ class _SettingsAboutState extends State<SettingsAbout> {
               const SizedBox(height: 24),
 
               // Section: Legal Documents
-              const _SectionHeader(title: 'Правовые документы'),
+              _SectionHeader(title: isRu ? 'Правовые документы' : 'Legal Documents'),
               const SizedBox(height: 8),
 
               Card(
@@ -202,18 +216,26 @@ class _SettingsAboutState extends State<SettingsAbout> {
                   children: [
                     ListTile(
                       leading: const Icon(Icons.shield_moon_outlined),
-                      title: const Text('Политика конфиденциальности'),
-                      subtitle: Text('Защита данных GDPR / DSGVO (${AppConfig.serverLocationRegion})'),
+                      title: Text(isRu ? 'Политика конфиденциальности' : 'Privacy Policy'),
+                      subtitle: Text(
+                        isRu
+                            ? 'Защита данных GDPR / DSGVO (${AppConfig.serverLocationRegion})'
+                            : 'GDPR / DSGVO data protection (${AppConfig.serverLocationRegion})',
+                      ),
                       trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: () => context.go('/rooms/settings/privacy'),
+                      onTap: () => context.push('/rooms/settings/privacy'),
                     ),
                     Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.5)),
                     ListTile(
                       leading: const Icon(Icons.description_outlined),
-                      title: const Text('Условия использования'),
-                      subtitle: const Text('Пользовательское соглашение и отказ от гарантий'),
+                      title: Text(isRu ? 'Условия использования' : 'Terms of Use'),
+                      subtitle: Text(
+                        isRu
+                            ? 'Пользовательское соглашение и отказ от гарантий'
+                            : 'End user agreement and disclaimers',
+                      ),
                       trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: () => context.go('/rooms/settings/terms'),
+                      onTap: () => context.push('/rooms/settings/terms'),
                     ),
                   ],
                 ),
@@ -222,7 +244,7 @@ class _SettingsAboutState extends State<SettingsAbout> {
               const SizedBox(height: 24),
 
               // Section: License text dropdown
-              const _SectionHeader(title: 'Текст лицензии AGPL-3.0'),
+              _SectionHeader(title: isRu ? 'Лицензия AGPL-3.0' : 'AGPL-3.0 License'),
               const SizedBox(height: 8),
 
               Card(
@@ -235,7 +257,7 @@ class _SettingsAboutState extends State<SettingsAbout> {
                 ),
                 child: ExpansionTile(
                   leading: const Icon(Icons.gavel_outlined),
-                  title: const Text('Лицензия AGPL-3.0'),
+                  title: const Text('AGPL-3.0'),
                   subtitle: Text(AppConfig.clientLicenseName),
                   children: [
                     Padding(
@@ -262,7 +284,7 @@ class _SettingsAboutState extends State<SettingsAbout> {
               const SizedBox(height: 24),
 
               // Section: Packages & System
-              const _SectionHeader(title: 'Зависимости и системные компоненты'),
+              _SectionHeader(title: isRu ? 'Зависимости и системные компоненты' : 'Dependencies & System'),
               const SizedBox(height: 8),
 
               Card(
@@ -277,8 +299,12 @@ class _SettingsAboutState extends State<SettingsAbout> {
                   children: [
                     ListTile(
                       leading: const Icon(Icons.collections_bookmark_outlined),
-                      title: const Text('Лицензии сторонних пакетов'),
-                      subtitle: const Text('Просмотр лицензий используемых Flutter-библиотек'),
+                      title: Text(isRu ? 'Лицензии сторонних пакетов' : 'Third-party Licenses'),
+                      subtitle: Text(
+                        isRu
+                            ? 'Просмотр лицензий используемых Flutter-библиотек'
+                            : 'Browse licenses of Flutter packages in use',
+                      ),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () => showLicensePage(
                         context: context,
@@ -290,7 +316,9 @@ class _SettingsAboutState extends State<SettingsAbout> {
                     ListTile(
                       leading: const Icon(Icons.terminal_outlined),
                       title: Text(L10n.of(context).logs),
-                      subtitle: const Text('Системные журналы отладки приложения'),
+                      subtitle: Text(
+                        isRu ? 'Системные журналы отладки приложения' : 'Application debug logs',
+                      ),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () => context.go('/logs'),
                     ),
