@@ -157,12 +157,20 @@ jobs:
               json.dump(data, f, ensure_ascii=False, indent=2)
           "
           echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
+          echo "changelog_ru=${CHANGELOG_RU}" >> $GITHUB_OUTPUT
+          echo "changelog_en=${CHANGELOG_EN}" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release & Upload Assets
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.prep.outputs.tag_name }}
           name: QNSKK ${{ steps.prep.outputs.tag_name }}
+          body: |
+            ${{ steps.prep.outputs.changelog_ru }}
+
+            ---
+
+            ${{ steps.prep.outputs.changelog_en }}
           files: |
             release_artifacts/qnskk-*-arm64-v8a.apk
             release_artifacts/qnskk-*-armeabi-v7a.apk
